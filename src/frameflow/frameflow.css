@@ -1,0 +1,160 @@
+.frameflow-canvas-figure {
+  margin: 0;
+}
+
+.frameflow-figure-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  max-width: 640px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-h);
+  margin-bottom: 0.5rem;
+}
+
+.frameflow-canvas-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.frameflow-drag-stats {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  width: 14.5rem;
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.frameflow-drag-stat {
+  flex-shrink: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.frameflow-drag-stat-direction {
+  width: 1.25rem;
+  text-align: center;
+}
+
+.frameflow-drag-stat-speed {
+  width: 2.5rem;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-transform: lowercase;
+  color: var(--text);
+  text-align: center;
+}
+
+.frameflow-drag-stat-speed--slow {
+  color: #c2410c;
+}
+
+.frameflow-drag-stat-speed--fast {
+  color: #15803d;
+}
+
+.frameflow-drag-stat-velocity {
+  width: 9rem;
+}
+
+.frameflow-canvas-stack {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.frameflow-canvas-overlay {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.frameflow-canvas-overlay--scrubbing {
+  cursor: grab;
+}
+
+.frameflow-canvas-overlay--scrubbing:active {
+  cursor: grabbing;
+}
+
+.frameflow-progress-hit {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.frameflow-progress-bar {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  transition: height 120ms ease;
+}
+
+.frameflow-progress-bar__fill {
+  height: 100%;
+  background: #fff;
+  transition: width 40ms linear;
+}
+
+.frameflow-progress-hit--expanded .frameflow-progress-bar__fill {
+  transition: width 16ms linear;
+}
+
+.frameflow-canvas-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.frameflow-canvas-stack canvas {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  background: #000;
+}
+
+.frameflow-scrub-mode-label {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: lowercase;
+  color: #15803d;
+}
+
+.frameflow-warning {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.12);
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  color: var(--text-h);
+  font-size: 0.875rem;
+  margin-top: 0.75rem;
+}

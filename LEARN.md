@@ -1,0 +1,1 @@
+- https://www.chromium.org/developers/design-documents/compositor-thread-architecture/

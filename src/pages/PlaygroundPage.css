@@ -1,0 +1,9 @@
+.playground-page {
+  min-height: 100vh;
+  padding: 2rem 1.5rem;
+}
+
+.playground-page__main {
+  max-width: 640px;
+  margin: 0 auto;
+}
