@@ -1,75 +1,89 @@
-# React + TypeScript + Vite
+# Frameflow
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Media storyboard playground with Frameflow video scrubbing — drag/drop references, link shots, and extract stills. Built as a **web + server** monorepo.
 
-Currently, two official plugins are available:
+**Status:** Storyboard V2 shipped (persistence, ingest, image cards, extract frame). See [Storyboard V2](./docs/STORYBOARD_V2.md) for the full spec and decision log.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## What you get
 
-## React Compiler
+- **Video cards** — per-node Frameflow scrub/playback; last scrubbed frame persists across refresh
+- **Image cards** — drop, paste, or import stills; aspect-correct resize
+- **Ingest** — drag & drop, file picker, clipboard paste (images)
+- **Card actions** — rename, duplicate, delete; extract current video frame → linked image card
+- **Persistence** — SQLite board + UUID asset files on disk; autosave (~500ms)
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+Open **`http://localhost:5173`** after starting dev (Vite proxies `/api` and `/assets` to the API).
 
-Note: This will impact Vite dev & build performances.
+## Structure
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+/
+  web/                 React + Vite frontend (storyboard at `/`)
+  server/              Bun API (SQLite + local asset files)
+  data/                Runtime data (gitignored)
+    storyboard.db
+    assets/{uuid}.ext
+  docs/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Requirements
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- [Bun](https://bun.sh) 1.2+ (server)
+- Node/npm or Bun (web tooling)
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Development
+
+From the **repo root** (starts API + web together):
+
+```bash
+bun install
+bun run dev
 ```
+
+This starts:
+
+- **API** at `http://localhost:3001` (Bun + `bun:sqlite`)
+- **Web** at `http://localhost:5173` (Vite)
+
+Run individually:
+
+```bash
+bun run dev:server   # API only — port 3001
+bun run dev:web      # Vite only — port 5173
+```
+
+**Port already in use?** If `EADDRINUSE` on 3001, a previous dev session is still running. Check and stop it:
+
+```bash
+lsof -i:3001
+kill <PID>
+```
+
+Do not start `server/` dev while root `bun run dev` is already running — both bind to 3001.
+
+## API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/health` | Health check |
+| `GET` | `/api/board` | Load nodes, edges, assets |
+| `PUT` | `/api/board` | Replace board graph |
+| `POST` | `/api/assets` | Upload file (`multipart/form-data`, field `file`) |
+| `DELETE` | `/api/assets/:id` | Delete asset if unreferenced |
+| `GET` | `/assets/:uuid.ext` | Serve stored media |
+
+**Upload formats:** video `.mp4` / `.mov`; images JPEG, PNG, WebP, GIF, AVIF, SVG.
+
+## Build
+
+```bash
+bun run build
+```
+
+Builds the web app only (`web/`). Run the server separately for a production-like setup (`bun run start:server`).
+
+## Docs
+
+- [Storyboard V2](./docs/STORYBOARD_V2.md) — feature spec, phases, success criteria
+- [Frameflow architecture](./docs/FRAMEFLOW_COMPONENT_ARCHITECTURE.md) — video/canvas component design
+- [Scrub strategies](./docs/SCRUB_SEEK_STRATEGIES.md) · [Trackpad scrub](./docs/TRACKPAD_SCRUB.md)
