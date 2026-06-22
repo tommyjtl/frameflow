@@ -1,6 +1,11 @@
 import { useReactFlow } from '@xyflow/react'
 import { useStoryboardCardActions } from './StoryboardCardActionsContext'
-import { isImageNodeData, isVideoNodeData, type MediaCardNodeType } from './storyboardTypes'
+import {
+  canEnterImageCrop,
+  isImageNodeData,
+  isVideoNodeData,
+  type MediaCardNodeType,
+} from './storyboardTypes'
 
 export type StoryboardContextMenuState = {
   nodeId: string
@@ -36,10 +41,7 @@ export function StoryboardContextMenu({
   const imageData =
     node != null && isImageNodeData(node.data) ? node.data : null
   const extractReady = canExtractFrame(menu.nodeId)
-  const cropReady =
-    imageData != null &&
-    Boolean(imageData.src) &&
-    imageData.importStatus !== 'downloading'
+  const cropReady = imageData != null && canEnterImageCrop(imageData)
 
   const runAction = (action: () => void) => {
     action()

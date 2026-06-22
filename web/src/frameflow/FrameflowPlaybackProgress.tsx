@@ -40,7 +40,7 @@ export function FrameflowPlaybackProgress() {
   const [isHovering, setIsHovering] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
 
-  const { isReady, currentFrame, totalFrames, seekToFrame } =
+  const { isReady, currentFrame, totalFrames, seekToFrame, beginProgressScrub, endProgressScrub } =
     useFrameflowVideoContext()
 
   const seekFromPointer = useCallback(
@@ -66,9 +66,10 @@ export function FrameflowPlaybackProgress() {
       event.currentTarget.setPointerCapture(event.pointerId)
       isDraggingRef.current = true
       setIsDragging(true)
+      beginProgressScrub()
       seekFromPointer(event.clientX)
     },
-    [seekFromPointer],
+    [beginProgressScrub, seekFromPointer],
   )
 
   const handlePointerMove = useCallback(
@@ -94,10 +95,15 @@ export function FrameflowPlaybackProgress() {
         event.currentTarget.releasePointerCapture(event.pointerId)
       }
 
+      const wasDragging = isDraggingRef.current
       isDraggingRef.current = false
       setIsDragging(false)
+
+      if (wasDragging) {
+        endProgressScrub()
+      }
     },
-    [],
+    [endProgressScrub],
   )
 
   if (!isReady || totalFrames === null || totalFrames <= 0) {

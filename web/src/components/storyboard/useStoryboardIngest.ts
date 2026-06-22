@@ -5,17 +5,21 @@ import {
   getPasteImageFiles,
   hasFileDrag,
   labelFromFileName,
-  loadImageDimensions,
+  loadImageDimensionsFromFile,
+  loadVideoDimensionsFromFile,
   nodePositionForDrop,
   nodePositionForPaste,
   validateIngestFile,
 } from './storyboardIngest'
 import {
+  STORYBOARD_DEFAULT_CANVAS_HEIGHT,
+  STORYBOARD_DEFAULT_CANVAS_WIDTH,
   STORYBOARD_DEFAULT_NODE_HEIGHT,
   STORYBOARD_DEFAULT_NODE_WIDTH,
   createImageNode,
   createVideoNode,
   getImageNodeDimensions,
+  getVideoNodeDimensions,
   type StoryboardNodeType,
 } from './storyboardTypes'
 
@@ -94,23 +98,37 @@ export function useStoryboardIngest({
           }
 
           if (asset.kind === 'video') {
+            const natural = await loadVideoDimensionsFromFile(file)
+            const nodeDimensions = getVideoNodeDimensions(
+              natural?.naturalWidth,
+              natural?.naturalHeight,
+              STORYBOARD_DEFAULT_CANVAS_WIDTH,
+              STORYBOARD_DEFAULT_CANVAS_HEIGHT,
+            )
             const position = nodePositionForDrop(
               anchor,
-              STORYBOARD_DEFAULT_NODE_WIDTH,
-              STORYBOARD_DEFAULT_NODE_HEIGHT,
+              nodeDimensions.width,
+              nodeDimensions.height,
               index,
             )
 
             setNodes((currentNodes) => [
               ...currentNodes,
-              createVideoNode(nodeId, position, {
-                label,
-                src: asset.url,
-                assetId: asset.id,
-              }),
+              createVideoNode(
+                nodeId,
+                position,
+                {
+                  label,
+                  src: asset.url,
+                  assetId: asset.id,
+                  naturalWidth: natural?.naturalWidth,
+                  naturalHeight: natural?.naturalHeight,
+                },
+                nodeDimensions,
+              ),
             ])
           } else {
-            const natural = await loadImageDimensions(asset.url)
+            const natural = await loadImageDimensionsFromFile(file)
             const nodeDimensions = getImageNodeDimensions(
               natural?.naturalWidth,
               natural?.naturalHeight,

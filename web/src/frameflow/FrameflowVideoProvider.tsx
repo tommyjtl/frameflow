@@ -57,6 +57,10 @@ export type FrameflowVideoContextValue = {
   isPlaying: boolean
   isReady: boolean
   isScrubbing: boolean
+  /** True while canvas scrub or progress-bar drag is active. */
+  isSeeking: boolean
+  /** Increments when a seek/scrub gesture completes (pointer up). */
+  seekCommitToken: number
   currentFrame: number | null
   totalFrames: number | null
   dragDirection: DragDirection
@@ -66,6 +70,8 @@ export type FrameflowVideoContextValue = {
   frameflowSupported: boolean
   togglePlayback: () => void
   seekToFrame: (frame: number) => void
+  beginProgressScrub: () => void
+  endProgressScrub: () => void
   scrubHandlers: FrameflowScrubHandlers
   registerCanvas: (canvas: HTMLCanvasElement | null) => void
   resetForNewSource: () => void
@@ -150,6 +156,8 @@ export function FrameflowVideoProvider({
   const [fpsProbeStatus, setFpsProbeStatus] =
     useState<FpsProbeStatus>('pending')
   const [isScrubbing, setIsScrubbing] = useState(false)
+  const [isProgressScrubbing, setIsProgressScrubbing] = useState(false)
+  const [seekCommitToken, setSeekCommitToken] = useState(0)
   const [scrubThroughput, setScrubThroughput] = useState<string | null>(null)
   const [canvasReady, setCanvasReady] = useState(false)
 
@@ -188,6 +196,19 @@ export function FrameflowVideoProvider({
     },
     [paintCurrentFrame],
   )
+
+  const notifySeekCommit = useCallback(() => {
+    setSeekCommitToken((token) => token + 1)
+  }, [])
+
+  const beginProgressScrub = useCallback(() => {
+    setIsProgressScrubbing(true)
+  }, [])
+
+  const endProgressScrub = useCallback(() => {
+    setIsProgressScrubbing(false)
+    notifySeekCommit()
+  }, [notifySeekCommit])
 
   const updateScrubThroughput = useCallback(() => {
     const now = performance.now()
@@ -794,6 +815,10 @@ export function FrameflowVideoProvider({
       pointerOriginRef.current = null
       pointerExceededToleranceRef.current = false
 
+      if (wasScrubbing) {
+        notifySeekCommit()
+      }
+
       if (!exceededTolerance) {
         const rect = event.currentTarget.getBoundingClientRect()
         const canTogglePlayback =
@@ -830,6 +855,7 @@ export function FrameflowVideoProvider({
       resetScrubThroughput,
       togglePlayback,
       playbackClickInset,
+      notifySeekCommit,
     ],
   )
 
@@ -1034,6 +1060,8 @@ export function FrameflowVideoProvider({
       isPlaying,
       isReady,
       isScrubbing,
+      isSeeking: isScrubbing || isProgressScrubbing,
+      seekCommitToken,
       currentFrame,
       totalFrames,
       dragDirection,
@@ -1043,6 +1071,8 @@ export function FrameflowVideoProvider({
       frameflowSupported: FRAMEFLOW_SUPPORTED,
       togglePlayback,
       seekToFrame: seekToFrameByIndex,
+      beginProgressScrub,
+      endProgressScrub,
       scrubHandlers,
       registerCanvas,
       resetForNewSource,
@@ -1056,6 +1086,8 @@ export function FrameflowVideoProvider({
       isPlaying,
       isReady,
       isScrubbing,
+      isProgressScrubbing,
+      seekCommitToken,
       currentFrame,
       totalFrames,
       dragDirection,
@@ -1064,6 +1096,8 @@ export function FrameflowVideoProvider({
       debugSnapshot,
       togglePlayback,
       seekToFrameByIndex,
+      beginProgressScrub,
+      endProgressScrub,
       scrubHandlers,
       registerCanvas,
       resetForNewSource,

@@ -129,6 +129,59 @@ export function loadImageDimensions(
   })
 }
 
+export function loadVideoDimensions(
+  src: string,
+): Promise<{ naturalWidth: number; naturalHeight: number } | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+
+    const cleanup = () => {
+      video.removeAttribute('src')
+      video.load()
+    }
+
+    video.onloadedmetadata = () => {
+      const naturalWidth = video.videoWidth
+      const naturalHeight = video.videoHeight
+      cleanup()
+
+      if (naturalWidth > 0 && naturalHeight > 0) {
+        resolve({ naturalWidth, naturalHeight })
+      } else {
+        resolve(null)
+      }
+    }
+
+    video.onerror = () => {
+      cleanup()
+      resolve(null)
+    }
+
+    video.src = src
+  })
+}
+
+export function loadVideoDimensionsFromFile(
+  file: File,
+): Promise<{ naturalWidth: number; naturalHeight: number } | null> {
+  const url = URL.createObjectURL(file)
+
+  return loadVideoDimensions(url).finally(() => {
+    URL.revokeObjectURL(url)
+  })
+}
+
+export function loadImageDimensionsFromFile(
+  file: File,
+): Promise<{ naturalWidth: number; naturalHeight: number } | null> {
+  const url = URL.createObjectURL(file)
+
+  return loadImageDimensions(url).finally(() => {
+    URL.revokeObjectURL(url)
+  })
+}
+
 export function nodePositionForDrop(
   flowPosition: { x: number; y: number },
   nodeWidth: number,

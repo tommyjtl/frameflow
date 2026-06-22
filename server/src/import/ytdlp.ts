@@ -21,7 +21,8 @@ function ensureTmpDir(): void {
 function buildFormatArgs(): string[] {
   return [
     '-f',
-    'bv*+ba/b',
+    // Second-best video (+ best audio), then second-best combined format.
+    'bv*.2+ba/b.2',
     '--merge-output-format',
     'mp4',
     '--extractor-args',

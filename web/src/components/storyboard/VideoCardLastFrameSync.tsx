@@ -1,9 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useNodeId, useReactFlow } from '@xyflow/react'
 import { useFrameflowVideoContext } from '../../frameflow'
 import type { MediaCardNodeType } from './storyboardTypes'
-
-const PERSIST_DEBOUNCE_MS = 400
 
 type VideoCardLastFrameSyncProps = {
   lastFrame?: number
@@ -17,9 +15,21 @@ export function VideoCardLastFrameSync({
 }: VideoCardLastFrameSyncProps) {
   const nodeId = useNodeId()
   const { setNodes } = useReactFlow<MediaCardNodeType>()
-  const { isReady, isPlaying, isScrubbing, currentFrame, totalFrames, seekToFrame } =
-    useFrameflowVideoContext()
+  const {
+    isReady,
+    isPlaying,
+    isSeeking,
+    seekCommitToken,
+    currentFrame,
+    totalFrames,
+    seekToFrame,
+  } = useFrameflowVideoContext()
   const restoredSrcRef = useRef<string | null>(null)
+  const wasPlayingRef = useRef(isPlaying)
+  const currentFrameRef = useRef(currentFrame)
+  const persistGenerationRef = useRef(0)
+
+  currentFrameRef.current = currentFrame
 
   useEffect(() => {
     restoredSrcRef.current = null
@@ -35,21 +45,27 @@ export function VideoCardLastFrameSync({
     if (lastFrame != null && lastFrame > 0) {
       seekToFrame(Math.min(lastFrame, totalFrames - 1))
     }
-  }, [isReady, seekToFrame, src, totalFrames])
+  }, [isReady, lastFrame, seekToFrame, src, totalFrames])
 
-  useEffect(() => {
-    if (!nodeId || currentFrame == null || isPlaying || isScrubbing) {
-      return
-    }
+  const persistLastFrame = useCallback(
+    (frame: number) => {
+      if (!nodeId) {
+        return
+      }
 
-    const timer = window.setTimeout(() => {
-      setNodes((nodes) =>
-        nodes.map((node) => {
+      const generation = ++persistGenerationRef.current
+
+      setNodes((nodes) => {
+        if (generation !== persistGenerationRef.current) {
+          return nodes
+        }
+
+        return nodes.map((node) => {
           if (node.id !== nodeId || node.data.kind !== 'video') {
             return node
           }
 
-          if (node.data.lastFrame === currentFrame) {
+          if (node.data.lastFrame === frame) {
             return node
           }
 
@@ -57,17 +73,45 @@ export function VideoCardLastFrameSync({
             ...node,
             data: {
               ...node.data,
-              lastFrame: currentFrame,
+              lastFrame: frame,
             },
           }
-        }),
-      )
-    }, PERSIST_DEBOUNCE_MS)
+        })
+      })
+    },
+    [nodeId, setNodes],
+  )
 
-    return () => {
-      window.clearTimeout(timer)
+  useEffect(() => {
+    if (seekCommitToken === 0) {
+      return
     }
-  }, [currentFrame, isPlaying, isScrubbing, nodeId, setNodes])
+
+    const frame = currentFrameRef.current
+
+    if (frame == null) {
+      return
+    }
+
+    persistLastFrame(frame)
+  }, [persistLastFrame, seekCommitToken])
+
+  useEffect(() => {
+    const wasPlaying = wasPlayingRef.current
+    wasPlayingRef.current = isPlaying
+
+    if (!wasPlaying || isPlaying || isSeeking) {
+      return
+    }
+
+    const frame = currentFrameRef.current
+
+    if (frame == null) {
+      return
+    }
+
+    persistLastFrame(frame)
+  }, [isPlaying, isSeeking, persistLastFrame])
 
   return null
 }

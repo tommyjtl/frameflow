@@ -235,6 +235,11 @@ function StoryboardPlaygroundCanvas({
 
       if (event.detail === 2) {
         if (interactionMode === 'select') {
+          if (croppingNodeId) {
+            cancelCrop()
+            return
+          }
+
           createTextAtFlowPosition(
             screenToFlowPosition({
               x: event.clientX,
@@ -247,6 +252,11 @@ function StoryboardPlaygroundCanvas({
       }
 
       if (event.detail > 1) {
+        return
+      }
+
+      if (interactionMode === 'select' && croppingNodeId) {
+        cancelCrop()
         return
       }
 
@@ -267,14 +277,29 @@ function StoryboardPlaygroundCanvas({
       )
     },
     [
+      cancelCrop,
       closeContextMenu,
       createTextAtFlowPosition,
+      croppingNodeId,
       editingTextNodeId,
       exitTextEditing,
       interactionMode,
       loadState,
       screenToFlowPosition,
     ],
+  )
+
+  const handleNodeClick = useCallback<NodeMouseHandler<StoryboardNodeType>>(
+    (_event, node) => {
+      if (interactionMode !== 'select' || !croppingNodeId) {
+        return
+      }
+
+      if (node.id !== croppingNodeId) {
+        cancelCrop()
+      }
+    },
+    [cancelCrop, croppingNodeId, interactionMode],
   )
 
   const hasSelectedTextNode = nodes.some(
@@ -348,6 +373,7 @@ function StoryboardPlaygroundCanvas({
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeContextMenu={onNodeContextMenu}
+          onNodeClick={handleNodeClick}
           onPaneClick={handlePaneClick}
           onCloseContextMenu={closeContextMenu}
           onImportFromUrl={startUrlImport}

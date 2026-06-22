@@ -92,6 +92,8 @@ function replaceNodeWithImportComplete(
     node.position,
     {
       ...shared,
+      naturalWidth: complete.naturalWidth,
+      naturalHeight: complete.naturalHeight,
       lastFrame: isVideoNodeData(node.data) ? node.data.lastFrame : undefined,
     },
     dimensions,

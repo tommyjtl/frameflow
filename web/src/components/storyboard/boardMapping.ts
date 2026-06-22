@@ -2,6 +2,8 @@ import type { Edge } from '@xyflow/react'
 import { DEFAULT_SAMPLE_VIDEO } from '../../frameflow'
 import type { AssetRecord, BoardEdgeRecord, BoardNodeRecord, BoardPayload } from './storyboardApi'
 import {
+  STORYBOARD_DEFAULT_CANVAS_HEIGHT,
+  STORYBOARD_DEFAULT_CANVAS_WIDTH,
   STORYBOARD_DEFAULT_NODE_HEIGHT,
   STORYBOARD_DEFAULT_NODE_WIDTH,
   STORYBOARD_NODE_X_GAP,
@@ -11,6 +13,7 @@ import {
   createFreehandNode,
   createTextNoteNode,
   getImageNodeDimensions,
+  getVideoNodeDimensions,
   isDefaultVideoNodeDimensions,
   isFreehandDrawNode,
   isTextNoteNode,
@@ -231,7 +234,6 @@ function boardNodeToFlowNode(
   assets: AssetRecord[],
 ): StoryboardNodeType | null {
   const position = { x: record.positionX, y: record.positionY }
-  const dimensions = { width: record.width, height: record.height }
   const importMeta = resolveImportMeta(record)
   const baseData = {
     label: record.label,
@@ -241,11 +243,26 @@ function boardNodeToFlowNode(
   }
 
   if (record.kind === 'video') {
+    const naturalMeta = resolveNodeNaturalDimensions(record)
+    const dimensions =
+      naturalMeta.naturalWidth && naturalMeta.naturalHeight
+        ? isDefaultVideoNodeDimensions(record.width, record.height)
+          ? getVideoNodeDimensions(
+              naturalMeta.naturalWidth,
+              naturalMeta.naturalHeight,
+              STORYBOARD_DEFAULT_CANVAS_WIDTH,
+              STORYBOARD_DEFAULT_CANVAS_HEIGHT,
+            )
+          : { width: record.width, height: record.height }
+        : { width: record.width, height: record.height }
+
     return createVideoNode(
       record.id,
       position,
       {
         ...baseData,
+        naturalWidth: naturalMeta.naturalWidth,
+        naturalHeight: naturalMeta.naturalHeight,
         lastFrame: resolveNodeLastFrame(record),
       },
       dimensions,
@@ -364,6 +381,16 @@ function buildNodeMeta(node: StoryboardNodeType): Record<string, unknown> | null
 
   if (isVideoNodeData(node.data) && node.data.lastFrame != null) {
     meta.lastFrame = node.data.lastFrame
+  }
+
+  if (isVideoNodeData(node.data)) {
+    if (node.data.naturalWidth != null) {
+      meta.naturalWidth = node.data.naturalWidth
+    }
+
+    if (node.data.naturalHeight != null) {
+      meta.naturalHeight = node.data.naturalHeight
+    }
   }
 
   if (node.data.kind === 'image') {

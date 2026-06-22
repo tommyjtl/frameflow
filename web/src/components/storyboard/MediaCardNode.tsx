@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useCallback, type MouseEvent } from 'react'
 import { useNodeId, type NodeProps } from '@xyflow/react'
 import { FrameflowVideoProvider } from '../../frameflow'
 import { ImageCardBody } from './ImageCardBody'
@@ -8,6 +8,7 @@ import { useStoryboardImageCrop } from './StoryboardImageCropContext'
 import { VideoCardBody } from './VideoCardBody'
 import { ImportVideoCardHeader, VideoCardHeader } from './VideoCardHeader'
 import {
+  canEnterImageCrop,
   getCanvasDimensions,
   getImageNodeMinDimensions,
   isImageNodeData,
@@ -23,9 +24,26 @@ function MediaCardNodeComponent({
   height,
 }: NodeProps<MediaCardNodeType>) {
   const nodeId = useNodeId()
-  const { croppingNodeId, cropFrame, naturalWidth, naturalHeight } =
+  const { croppingNodeId, cropFrame, naturalWidth, naturalHeight, enterCropMode } =
     useStoryboardImageCrop()
   const isCropping = nodeId != null && croppingNodeId === nodeId
+
+  const handleImageDoubleClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      event.stopPropagation()
+
+      if (!selected || !nodeId || isCropping || !isImageNodeData(data)) {
+        return
+      }
+
+      if (!canEnterImageCrop(data)) {
+        return
+      }
+
+      enterCropMode(nodeId)
+    },
+    [data, enterCropMode, isCropping, nodeId, selected],
+  )
   const canvasDimensions = getCanvasDimensions(width, height)
   const resizeBounds = isImageNodeData(data)
     ? getImageNodeMinDimensions(data.naturalWidth, data.naturalHeight)
@@ -135,6 +153,7 @@ function MediaCardNodeComponent({
           platform={data.platform}
           sourceUrl={data.sourceUrl}
           importing={data.importStatus === 'downloading'}
+          onDoubleClick={handleImageDoubleClick}
         />
       )}
     </MediaCardShell>

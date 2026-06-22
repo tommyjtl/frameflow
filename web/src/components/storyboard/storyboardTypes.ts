@@ -15,6 +15,8 @@ type MediaCardBaseData = {
 
 export type VideoMediaNodeData = MediaCardBaseData & {
   kind: 'video'
+  naturalWidth?: number
+  naturalHeight?: number
   /** Last scrubbed/playback frame index, persisted in board meta. */
   lastFrame?: number
 }
@@ -216,6 +218,40 @@ function imageBodyFromNaturalAspect(
   )
 }
 
+function imageBodyFromNaturalAspectWidth(
+  naturalWidth: number,
+  naturalHeight: number,
+  seedBodyWidth: number,
+): { bodyWidth: number; bodyHeight: number } {
+  const aspect = naturalWidth / naturalHeight
+  return clampImageBodyDimensions(
+    seedBodyWidth,
+    Math.round(seedBodyWidth / aspect),
+  )
+}
+
+/** Size the card body from natural media dimensions, anchoring the long edge to the seed bounds. */
+function mediaBodyFromNaturalDimensions(
+  naturalWidth: number,
+  naturalHeight: number,
+  seedBodyWidth: number,
+  seedBodyHeight: number,
+): { bodyWidth: number; bodyHeight: number } {
+  if (naturalWidth >= naturalHeight) {
+    return imageBodyFromNaturalAspect(
+      naturalWidth,
+      naturalHeight,
+      seedBodyHeight,
+    )
+  }
+
+  return imageBodyFromNaturalAspectWidth(
+    naturalWidth,
+    naturalHeight,
+    seedBodyWidth,
+  )
+}
+
 function imageNodeFromBody(bodyWidth: number, bodyHeight: number): {
   width: number
   height: number
@@ -243,9 +279,10 @@ export function getImageNodeDimensions(
     }
   }
 
-  const body = imageBodyFromNaturalAspect(
+  const body = mediaBodyFromNaturalDimensions(
     naturalWidth,
     naturalHeight,
+    STORYBOARD_DEFAULT_CANVAS_WIDTH,
     STORYBOARD_DEFAULT_CANVAS_HEIGHT,
   )
 
@@ -343,10 +380,15 @@ export function isImageNodeData(data: MediaNodeData): data is ImageMediaNodeData
   return data.kind === 'image'
 }
 
+export function canEnterImageCrop(data: ImageMediaNodeData): boolean {
+  return Boolean(data.src) && data.importStatus !== 'downloading'
+}
+
 /** Node size for a video card body, preserving asset aspect ratio plus header. */
 export function getVideoNodeDimensions(
   naturalWidth?: number,
   naturalHeight?: number,
+  seedBodyWidth: number = STORYBOARD_URL_IMPORT_BODY_SIZE,
   seedBodyHeight: number = STORYBOARD_URL_IMPORT_BODY_SIZE,
 ): { width: number; height: number } {
   if (
@@ -361,9 +403,10 @@ export function getVideoNodeDimensions(
     }
   }
 
-  const body = imageBodyFromNaturalAspect(
+  const body = mediaBodyFromNaturalDimensions(
     naturalWidth,
     naturalHeight,
+    seedBodyWidth,
     seedBodyHeight,
   )
 

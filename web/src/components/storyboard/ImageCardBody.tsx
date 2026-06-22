@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react'
 import { PlatformIcon } from './PlatformIcon'
 
 type ImageCardBodyProps = {
@@ -6,6 +7,7 @@ type ImageCardBodyProps = {
   platform?: 'youtube' | 'instagram'
   sourceUrl?: string
   importing?: boolean
+  onDoubleClick?: (event: MouseEvent<HTMLDivElement>) => void
 }
 
 export function ImageCardBody({
@@ -14,6 +16,7 @@ export function ImageCardBody({
   platform,
   sourceUrl,
   importing = false,
+  onDoubleClick,
 }: ImageCardBodyProps) {
   if (importing || !src) {
     return (
@@ -26,7 +29,7 @@ export function ImageCardBody({
   }
 
   return (
-    <div className="image-card-body">
+    <div className="image-card-body" onDoubleClick={onDoubleClick}>
       {platform && sourceUrl ? (
         <span className="image-card-body__platform-badge" aria-hidden>
           <PlatformIcon platform={platform} />

@@ -69,6 +69,7 @@ type StoryboardFlowProps = {
   onEdgesChange: OnEdgesChange<Edge>
   onConnect: (connection: Connection) => void
   onNodeContextMenu: NodeMouseHandler<StoryboardNodeType>
+  onNodeClick?: NodeMouseHandler<StoryboardNodeType>
   onPaneClick: (event: React.MouseEvent) => void
   onCloseContextMenu: () => void
   onImportFromUrl: (url: string) => Promise<void>
@@ -109,6 +110,7 @@ export function StoryboardFlow({
   onEdgesChange,
   onConnect,
   onNodeContextMenu,
+  onNodeClick,
   onPaneClick,
   onCloseContextMenu,
   onImportFromUrl,
@@ -167,6 +169,7 @@ export function StoryboardFlow({
       onSelectionDragStop={isInteractiveSelectMode ? onSelectionDragStop : undefined}
       onBeforeDelete={isInteractiveSelectMode ? onBeforeDelete : undefined}
       onNodeContextMenu={isInteractiveSelectMode ? onNodeContextMenu : undefined}
+      onNodeClick={onNodeClick}
       onPaneClick={onPaneClick}
       onDrop={isInteractiveSelectMode ? onDrop : undefined}
       onDragOver={isInteractiveSelectMode ? onDragOver : undefined}
