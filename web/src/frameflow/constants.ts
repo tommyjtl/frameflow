@@ -22,8 +22,8 @@ export const VELOCITY_SPEED_TIERS: {
   minAbs: number
   maxAbs: number
 }[] = [
-    { speed: 'slow', minAbs: 0, maxAbs: 500 },
-    { speed: 'fast', minAbs: 500, maxAbs: Number.POSITIVE_INFINITY },
+    { speed: 'slow', minAbs: 0, maxAbs: 1_000 },
+    { speed: 'fast', minAbs: 1_000, maxAbs: Number.POSITIVE_INFINITY },
   ]
 
 export const SAMPLE_INTERVAL_MS = 64

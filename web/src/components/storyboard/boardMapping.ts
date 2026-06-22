@@ -9,9 +9,11 @@ import {
   createImageNode,
   createVideoNode,
   createFreehandNode,
+  createTextNoteNode,
   getImageNodeDimensions,
   isDefaultVideoNodeDimensions,
   isFreehandDrawNode,
+  isTextNoteNode,
   isVideoNodeData,
   normalizeImageNodeDimensions,
   FREEHAND_DRAW_Z_INDEX_BASE,
@@ -154,16 +156,88 @@ function resolveDrawingMeta(record: BoardNodeRecord): {
   }
 }
 
+function resolveTextMeta(record: BoardNodeRecord): {
+  fontSize?: number
+  scale?: number
+  referenceWidth?: number
+} {
+  const fontSize = record.meta?.fontSize
+  const scale = record.meta?.scale
+  const referenceWidth = record.meta?.referenceWidth
+
+  return {
+    fontSize:
+      typeof fontSize === 'number' && Number.isFinite(fontSize)
+        ? fontSize
+        : undefined,
+    scale:
+      typeof scale === 'number' && Number.isFinite(scale) ? scale : undefined,
+    referenceWidth:
+      typeof referenceWidth === 'number' && Number.isFinite(referenceWidth)
+        ? referenceWidth
+        : undefined,
+  }
+}
+
+function resolveImportMeta(record: BoardNodeRecord): {
+  sourceUrl?: string
+  platform?: 'youtube' | 'instagram'
+  importJobId?: string
+  importStatus?: 'downloading' | 'complete' | 'error'
+  importProgress?: number
+  importTitle?: string
+  importErrorMessage?: string
+} {
+  const sourceUrl = record.meta?.sourceUrl
+  const platform = record.meta?.platform
+  const importJobId = record.meta?.importJobId
+  const importStatus = record.meta?.importStatus
+  const importProgress = record.meta?.importProgress
+  const importTitle = record.meta?.importTitle
+  const importErrorMessage = record.meta?.importErrorMessage
+
+  return {
+    sourceUrl:
+      typeof sourceUrl === 'string' && sourceUrl.length > 0 ? sourceUrl : undefined,
+    platform:
+      platform === 'youtube' || platform === 'instagram' ? platform : undefined,
+    importJobId:
+      typeof importJobId === 'string' && importJobId.length > 0
+        ? importJobId
+        : undefined,
+    importStatus:
+      importStatus === 'downloading' ||
+      importStatus === 'complete' ||
+      importStatus === 'error'
+        ? importStatus
+        : undefined,
+    importProgress:
+      typeof importProgress === 'number' && Number.isFinite(importProgress)
+        ? Math.min(100, Math.max(0, Math.round(importProgress)))
+        : undefined,
+    importTitle:
+      typeof importTitle === 'string' && importTitle.length > 0
+        ? importTitle
+        : undefined,
+    importErrorMessage:
+      typeof importErrorMessage === 'string' && importErrorMessage.length > 0
+        ? importErrorMessage
+        : undefined,
+  }
+}
+
 function boardNodeToFlowNode(
   record: BoardNodeRecord,
   assets: AssetRecord[],
 ): StoryboardNodeType | null {
   const position = { x: record.positionX, y: record.positionY }
   const dimensions = { width: record.width, height: record.height }
+  const importMeta = resolveImportMeta(record)
   const baseData = {
     label: record.label,
     src: resolveNodeSrc(record, assets),
     assetId: record.assetId,
+    ...importMeta,
   }
 
   if (record.kind === 'video') {
@@ -228,6 +302,22 @@ function boardNodeToFlowNode(
     )
   }
 
+  if (record.kind === 'text') {
+    const textMeta = resolveTextMeta(record)
+
+    return createTextNoteNode(
+      record.id,
+      position,
+      {
+        text: record.label === 'Text' ? '' : record.label,
+        fontSize: textMeta.fontSize,
+        scale: textMeta.scale,
+        referenceWidth: textMeta.referenceWidth,
+      },
+      { width: record.width, height: record.height },
+    )
+  }
+
   return null
 }
 
@@ -262,6 +352,10 @@ function buildNodeMeta(node: StoryboardNodeType): Record<string, unknown> | null
     }
   }
 
+  if (isTextNoteNode(node)) {
+    return null
+  }
+
   const meta: Record<string, unknown> = {}
 
   if (!node.data.assetId) {
@@ -290,7 +384,40 @@ function buildNodeMeta(node: StoryboardNodeType): Record<string, unknown> | null
     }
   }
 
+  if (node.data.sourceUrl) {
+    meta.sourceUrl = node.data.sourceUrl
+  }
+
+  if (node.data.platform) {
+    meta.platform = node.data.platform
+  }
+
+  if (node.data.importJobId) {
+    meta.importJobId = node.data.importJobId
+  }
+
+  if (node.data.importStatus) {
+    meta.importStatus = node.data.importStatus
+  }
+
+  if (node.data.importProgress != null) {
+    meta.importProgress = node.data.importProgress
+  }
+
+  if (node.data.importTitle) {
+    meta.importTitle = node.data.importTitle
+  }
+
+  if (node.data.importErrorMessage) {
+    meta.importErrorMessage = node.data.importErrorMessage
+  }
+
   return Object.keys(meta).length > 0 ? meta : null
+}
+
+function resolveNodeLabel(label: string | undefined, fallback: string): string {
+  const trimmed = label?.trim()
+  return trimmed && trimmed.length > 0 ? trimmed : fallback
 }
 
 function flowNodeToBoardRecord(node: StoryboardNodeType): BoardNodeRecord {
@@ -308,13 +435,42 @@ function flowNodeToBoardRecord(node: StoryboardNodeType): BoardNodeRecord {
     }
   }
 
+  if (isTextNoteNode(node)) {
+    const text = node.data.text.trim()
+    const meta: Record<string, unknown> = {}
+
+    if (node.data.fontSize != null) {
+      meta.fontSize = node.data.fontSize
+    }
+
+    if (node.data.scale != null) {
+      meta.scale = node.data.scale
+    }
+
+    if (node.data.referenceWidth != null) {
+      meta.referenceWidth = node.data.referenceWidth
+    }
+
+    return {
+      id: node.id,
+      kind: 'text',
+      assetId: null,
+      label: text.length > 0 ? text : 'Text',
+      positionX: node.position.x,
+      positionY: node.position.y,
+      width: node.width ?? STORYBOARD_DEFAULT_NODE_WIDTH,
+      height: node.height ?? STORYBOARD_DEFAULT_NODE_HEIGHT,
+      meta: Object.keys(meta).length > 0 ? meta : null,
+    }
+  }
+
   const assetId = node.data.assetId ?? null
 
   return {
     id: node.id,
     kind: node.data.kind,
     assetId,
-    label: node.data.label,
+    label: resolveNodeLabel(node.data.label, 'Imported media'),
     positionX: node.position.x,
     positionY: node.position.y,
     width: node.width ?? STORYBOARD_DEFAULT_NODE_WIDTH,

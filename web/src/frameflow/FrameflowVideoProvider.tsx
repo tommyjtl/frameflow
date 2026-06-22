@@ -46,6 +46,8 @@ import { isPlaybackClickAllowed } from './playbackClickInset'
 export type FrameCaptureResult = {
   blob: Blob
   frameIndex: number
+  naturalWidth: number
+  naturalHeight: number
 }
 
 export type FrameflowVideoContextValue = {
@@ -131,6 +133,8 @@ export function FrameflowVideoProvider({
   const isProbingFpsRef = useRef(false)
   const fpsProbeDeltasRef = useRef<number[]>([])
   const lastProbeMediaTimeRef = useRef<number | null>(null)
+  const fpsProbeStartTimeRef = useRef(0)
+  const userOverrodeProbePlaybackRef = useRef(false)
   const frameLoopStartedRef = useRef(false)
 
   const [src, setSrcState] = useState(srcProp)
@@ -223,23 +227,46 @@ export function FrameflowVideoProvider({
     setCurrentFrame(frame)
   }, [])
 
+  const cancelFpsProbe = useCallback(() => {
+    if (!isProbingFpsRef.current) {
+      return
+    }
+
+    isProbingFpsRef.current = false
+    fpsProbeDeltasRef.current = []
+    lastProbeMediaTimeRef.current = null
+  }, [])
+
+  const ensureFallbackFps = useCallback(() => {
+    const video = videoRef.current
+    if (
+      !video ||
+      videoFpsRef.current !== null ||
+      !Number.isFinite(video.duration) ||
+      video.duration <= 0
+    ) {
+      return false
+    }
+
+    cancelFpsProbe()
+    applyVideoFps(fallbackFps(video))
+    return true
+  }, [applyVideoFps, cancelFpsProbe])
+
   const completeFpsProbe = useCallback(
     (deltas: number[]) => {
       const video = videoRef.current
       if (!video || !isProbingFpsRef.current) return
 
-      isProbingFpsRef.current = false
-      fpsProbeDeltasRef.current = []
-      lastProbeMediaTimeRef.current = null
+      cancelFpsProbe()
+      userOverrodeProbePlaybackRef.current = false
 
       const measured =
         deltas.length >= 3 ? estimateFpsFromDeltas(deltas) : fallbackFps(video)
 
-      video.pause()
-      video.currentTime = 0
       applyVideoFps(measured)
     },
-    [applyVideoFps],
+    [applyVideoFps, cancelFpsProbe],
   )
 
   const clearScrubChainTimer = useCallback(() => {
@@ -509,40 +536,36 @@ export function FrameflowVideoProvider({
     callbackIdRef.current = video.requestVideoFrameCallback(updateCanvas)
   }, [completeFpsProbe, stopCallback, updateScrubThroughput])
 
-  const startFpsProbe = useCallback(async () => {
+  const startFpsProbe = useCallback(() => {
     const video = videoRef.current
-    if (!video || videoFpsRef.current !== null || isProbingFpsRef.current) {
+    if (!video || isProbingFpsRef.current) {
       return
     }
 
-    isProbingFpsRef.current = true
-    fpsProbeDeltasRef.current = []
-    lastProbeMediaTimeRef.current = null
-    setFpsProbeStatus('probing')
-
-    video.muted = true
-    startFramePaintLoop()
-
-    try {
-      await video.play()
-    } catch {
-      isProbingFpsRef.current = false
-      applyVideoFps(fallbackFps(video))
-      setFpsProbeStatus('needs-play')
-      video.pause()
+    if (
+      !Number.isFinite(video.duration) ||
+      video.duration <= 0
+    ) {
+      return
     }
-  }, [applyVideoFps, startFramePaintLoop])
+
+    ensureFallbackFps()
+  }, [ensureFallbackFps])
 
   const togglePlayback = useCallback(() => {
     const video = videoRef.current
     if (!video) return
+
+    if (videoFpsRef.current === null) {
+      ensureFallbackFps()
+    }
 
     if (video.paused) {
       void video.play()
     } else {
       video.pause()
     }
-  }, [])
+  }, [ensureFallbackFps])
 
   const clearMotionIdleTimeout = useCallback(() => {
     if (idleTimeoutRef.current !== null) {
@@ -585,6 +608,8 @@ export function FrameflowVideoProvider({
     isProbingFpsRef.current = false
     fpsProbeDeltasRef.current = []
     lastProbeMediaTimeRef.current = null
+    fpsProbeStartTimeRef.current = 0
+    userOverrodeProbePlaybackRef.current = false
     motionSampleRef.current = null
     pointerOriginRef.current = null
     pointerExceededToleranceRef.current = false
@@ -839,9 +864,11 @@ export function FrameflowVideoProvider({
     if (
       videoFpsRef.current === null &&
       !isProbingFpsRef.current &&
-      videoRef.current.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+      videoRef.current.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA &&
+      Number.isFinite(videoRef.current.duration) &&
+      videoRef.current.duration > 0
     ) {
-      void startFpsProbe()
+      startFpsProbe()
     }
   }, [canvasReady, src, startFramePaintLoop, startFpsProbe])
 
@@ -867,18 +894,22 @@ export function FrameflowVideoProvider({
       canvas.width = video.videoWidth
       canvas.height = video.videoHeight
       paintCurrentFrame()
+      ensureFallbackFps()
+    }
+
+    const handleDurationChange = () => {
+      ensureFallbackFps()
     }
 
     const handleCanPlay = () => {
       startFramePaintLoop()
-      if (videoFpsRef.current === null && !isProbingFpsRef.current) {
-        void startFpsProbe()
-      }
+      ensureFallbackFps()
     }
 
     video.addEventListener('play', handlePlay)
     video.addEventListener('pause', handlePause)
     video.addEventListener('loadedmetadata', handleLoadedMetadata)
+    video.addEventListener('durationchange', handleDurationChange)
     video.addEventListener('canplay', handleCanPlay)
     video.addEventListener('seeked', handleVideoSeeked)
 
@@ -890,6 +921,7 @@ export function FrameflowVideoProvider({
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('pause', handlePause)
       video.removeEventListener('loadedmetadata', handleLoadedMetadata)
+      video.removeEventListener('durationchange', handleDurationChange)
       video.removeEventListener('canplay', handleCanPlay)
       video.removeEventListener('seeked', handleVideoSeeked)
     }
@@ -900,6 +932,7 @@ export function FrameflowVideoProvider({
     startFramePaintLoop,
     resetForNewSource,
     paintCurrentFrame,
+    ensureFallbackFps,
   ])
 
   const velocitySpeed =
@@ -988,6 +1021,8 @@ export function FrameflowVideoProvider({
     return {
       blob,
       frameIndex: frameIndexRef.current,
+      naturalWidth: width,
+      naturalHeight: height,
     }
   }, [])
 

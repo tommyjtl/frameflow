@@ -30,6 +30,8 @@ Open **`http://localhost:5173`** after starting dev (Vite proxies `/api` and `/a
 
 - [Bun](https://bun.sh) 1.2+ (server)
 - Node/npm or Bun (web tooling)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) on `PATH` (Import from URL)
+- [ffprobe](https://ffmpeg.org/) on `PATH` optional (aspect ratio probing; yt-dlp fallback)
 
 ## Development
 

@@ -1,20 +1,27 @@
-import { useCallback, type DragEvent } from 'react'
+import { useCallback, useState, type DragEvent } from 'react'
 import {
   Background,
   Controls,
   Panel,
   ReactFlow,
+  SelectionMode,
   type Connection,
   type Edge,
   type NodeMouseHandler,
   type NodeTypes,
+  type OnBeforeDelete,
   type OnEdgesChange,
+  type OnNodeDrag,
   type OnNodesChange,
+  type SelectionDragHandler,
 } from '@xyflow/react'
+import { Redo2, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ImportFromUrlDialog } from './ImportFromUrlDialog'
 import { FreehandDrawLayer } from './FreehandDrawLayer'
 import { FreehandDrawNode } from './FreehandDrawNode'
 import { MediaCardNode } from './MediaCardNode'
+import { TextNoteNode } from './TextNoteNode'
 import { StoryboardDropOverlay } from './StoryboardDropOverlay'
 import {
   StoryboardContextMenu,
@@ -24,6 +31,7 @@ import { StoryboardModeToggle } from './StoryboardModeToggle'
 import {
   FREEHAND_DRAW_NODE_TYPE,
   MEDIA_CARD_NODE_TYPE,
+  TEXT_NOTE_NODE_TYPE,
   type BoardInteractionMode,
   type FreehandDrawNodeType,
   type MediaNodeData,
@@ -33,6 +41,7 @@ import {
 const nodeTypes: NodeTypes = {
   [MEDIA_CARD_NODE_TYPE]: MediaCardNode,
   [FREEHAND_DRAW_NODE_TYPE]: FreehandDrawNode,
+  [TEXT_NOTE_NODE_TYPE]: TextNoteNode,
 }
 
 const INGEST_FILE_ACCEPT =
@@ -40,6 +49,9 @@ const INGEST_FILE_ACCEPT =
 
 const STORYBOARD_PANEL_BUTTON_CLASS =
   'w-full border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] text-[color:var(--text-h)] text-xs font-medium shadow-none hover:border-[color:var(--accent)] hover:bg-[color:var(--accent-bg)]'
+
+const STORYBOARD_PANEL_ICON_BUTTON_CLASS =
+  'flex-1 border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] text-[color:var(--text-h)] text-xs font-medium shadow-none hover:border-[color:var(--accent)] hover:bg-[color:var(--accent-bg)]'
 
 type StoryboardFlowProps = {
   nodes: StoryboardNodeType[]
@@ -57,18 +69,28 @@ type StoryboardFlowProps = {
   onEdgesChange: OnEdgesChange<Edge>
   onConnect: (connection: Connection) => void
   onNodeContextMenu: NodeMouseHandler<StoryboardNodeType>
-  onPaneClick: () => void
+  onPaneClick: (event: React.MouseEvent) => void
   onCloseContextMenu: () => void
-  onAddShot: () => void
+  onImportFromUrl: (url: string) => Promise<void>
   onRetryLoad: () => void
   onDrop: (event: DragEvent) => void
   onDragOver: (event: DragEvent) => void
   onInteractionModeChange: (mode: BoardInteractionMode) => void
   onStrokeComplete: (node: FreehandDrawNodeType) => void
+  onNodeDragStart?: OnNodeDrag<StoryboardNodeType>
+  onNodeDragStop?: OnNodeDrag<StoryboardNodeType>
+  onSelectionDragStart?: SelectionDragHandler<StoryboardNodeType>
+  onSelectionDragStop?: SelectionDragHandler<StoryboardNodeType>
+  onBeforeDelete?: OnBeforeDelete<StoryboardNodeType, Edge>
+  canUndo: boolean
+  canRedo: boolean
+  onUndo: () => boolean
+  onRedo: () => boolean
   fitViewReady: boolean
   fileInputRef: React.RefObject<HTMLInputElement | null>
   onFileInputChange: (event: React.ChangeEvent<HTMLInputElement>) => void
   fitViewSlot: React.ReactNode
+  croppingNodeId?: string | null
 }
 
 export function StoryboardFlow({
@@ -89,18 +111,34 @@ export function StoryboardFlow({
   onNodeContextMenu,
   onPaneClick,
   onCloseContextMenu,
-  onAddShot,
+  onImportFromUrl,
   onRetryLoad,
   onDrop,
   onDragOver,
   onInteractionModeChange,
   onStrokeComplete,
+  onNodeDragStart,
+  onNodeDragStop,
+  onSelectionDragStart,
+  onSelectionDragStop,
+  onBeforeDelete,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   fitViewReady,
   fileInputRef,
   onFileInputChange,
   fitViewSlot,
+  croppingNodeId = null,
 }: StoryboardFlowProps) {
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
   const isDrawMode = interactionMode === 'draw'
+  const isTextMode = interactionMode === 'text'
+  const isSelectMode = interactionMode === 'select'
+  const isCropMode = croppingNodeId != null
+  const isToolMode = isDrawMode || isTextMode
+  const isInteractiveSelectMode = isSelectMode && !isCropMode
   const openFilePicker = useCallback(() => {
     fileInputRef.current?.click()
   }, [fileInputRef])
@@ -108,23 +146,41 @@ export function StoryboardFlow({
   return (
     <ReactFlow
       ref={flowRef}
-      className={isDrawMode ? 'react-flow--draw-mode' : undefined}
+      className={
+        isDrawMode
+          ? 'react-flow--draw-mode'
+          : isTextMode
+            ? 'react-flow--text-mode'
+            : isCropMode
+              ? 'react-flow--crop-mode'
+              : undefined
+      }
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
-      onConnect={isDrawMode ? undefined : onConnect}
-      onNodeContextMenu={isDrawMode ? undefined : onNodeContextMenu}
+      onConnect={isInteractiveSelectMode ? onConnect : undefined}
+      onNodeDragStart={isInteractiveSelectMode ? onNodeDragStart : undefined}
+      onNodeDragStop={isInteractiveSelectMode ? onNodeDragStop : undefined}
+      onSelectionDragStart={isInteractiveSelectMode ? onSelectionDragStart : undefined}
+      onSelectionDragStop={isInteractiveSelectMode ? onSelectionDragStop : undefined}
+      onBeforeDelete={isInteractiveSelectMode ? onBeforeDelete : undefined}
+      onNodeContextMenu={isInteractiveSelectMode ? onNodeContextMenu : undefined}
       onPaneClick={onPaneClick}
-      onDrop={isDrawMode ? undefined : onDrop}
-      onDragOver={isDrawMode ? undefined : onDragOver}
-      panOnDrag={isDrawMode ? [2] : true}
-      nodesDraggable={!isDrawMode}
-      nodesConnectable={!isDrawMode}
-      elementsSelectable={!isDrawMode}
-      selectionOnDrag={false}
-      deleteKeyCode={isDrawMode ? null : ['Backspace', 'Delete']}
+      onDrop={isInteractiveSelectMode ? onDrop : undefined}
+      onDragOver={isInteractiveSelectMode ? onDragOver : undefined}
+      panOnDrag={isCropMode ? false : isDrawMode ? [2] : [1, 2]}
+      panOnScroll={isInteractiveSelectMode}
+      panActivationKeyCode={isToolMode || isCropMode ? null : 'Space'}
+      zoomOnDoubleClick={false}
+      zoomOnScroll={!isCropMode}
+      selectionOnDrag={isInteractiveSelectMode}
+      selectionMode={isInteractiveSelectMode ? SelectionMode.Partial : undefined}
+      nodesDraggable={isInteractiveSelectMode}
+      nodesConnectable={isInteractiveSelectMode}
+      elementsSelectable={isInteractiveSelectMode}
+      deleteKeyCode={isToolMode || isCropMode ? null : ['Backspace', 'Delete']}
       defaultEdgeOptions={{
         type: 'default',
         style: { strokeWidth: 2 },
@@ -142,7 +198,7 @@ export function StoryboardFlow({
       <Controls />
       {isDrawMode && <FreehandDrawLayer onStrokeComplete={onStrokeComplete} />}
       {fitViewReady ? fitViewSlot : null}
-      {!isDrawMode && <StoryboardDropOverlay active={dragActive} />}
+      {!isToolMode && <StoryboardDropOverlay active={dragActive} />}
       <StoryboardContextMenu menu={contextMenu} onClose={onCloseContextMenu} />
 
       <Panel position="top-left">
@@ -189,6 +245,33 @@ export function StoryboardFlow({
           )}
 
           <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className={STORYBOARD_PANEL_ICON_BUTTON_CLASS}
+                onClick={() => onUndo()}
+                disabled={loadState !== 'ready' || isToolMode || isCropMode || !canUndo}
+                aria-label="Undo"
+                title="Undo (⌘Z)"
+              >
+                <Undo2 aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className={STORYBOARD_PANEL_ICON_BUTTON_CLASS}
+                onClick={() => onRedo()}
+                disabled={loadState !== 'ready' || isToolMode || isCropMode || !canRedo}
+                aria-label="Redo"
+                title="Redo (⌘⇧Z)"
+              >
+                <Redo2 aria-hidden />
+              </Button>
+            </div>
+
             {loadState === 'error' && (
               <Button
                 type="button"
@@ -206,11 +289,18 @@ export function StoryboardFlow({
               size="xs"
               variant="outline"
               className={STORYBOARD_PANEL_BUTTON_CLASS}
-              onClick={onAddShot}
-              disabled={loadState !== 'ready' || isDrawMode}
+              onClick={() => setImportDialogOpen(true)}
+              disabled={loadState !== 'ready' || isToolMode || isCropMode}
             >
-              Add shot
+              Import video from URL
             </Button>
+
+            <ImportFromUrlDialog
+              open={importDialogOpen}
+              onOpenChange={setImportDialogOpen}
+              disabled={loadState !== 'ready' || isToolMode || isCropMode}
+              onSubmit={onImportFromUrl}
+            />
 
             <Button
               type="button"
@@ -218,7 +308,7 @@ export function StoryboardFlow({
               variant="outline"
               className={STORYBOARD_PANEL_BUTTON_CLASS}
               onClick={openFilePicker}
-              disabled={loadState !== 'ready' || isDrawMode}
+              disabled={loadState !== 'ready' || isToolMode || isCropMode}
             >
               Import media
             </Button>

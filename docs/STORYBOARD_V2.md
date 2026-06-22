@@ -321,3 +321,18 @@ docs/STORYBOARD_V2.md
 | 2025-06 | Phase P implemented: `server/` (Bun + SQLite), repo split into `web/` + `server/` |
 | 2025-06 | Phases A–E + P shipped; image cards headerless; video `lastFrame` persistence |
 | 2025-06 | Extract frame: no auto-connect; image node only |
+
+---
+
+## Post-release cleanup (TODO)
+
+After the **first public release**, remove pre-release backward-compatibility paths so the codebase matches a single supported schema:
+
+| Area | Location | Remove |
+|------|----------|--------|
+| SQLite schema versioning | `server/src/db.ts` | `SCHEMA_VERSION`, `getUserVersion`, `migrate()`, `rebuildNodesTable()`, `nodesKindSupportsText()` repair |
+| SQLite version stamp | `server/src/db.ts` | `PRAGMA user_version` reads/writes |
+
+Keep only the canonical `SCHEMA` DDL in `getDb()`. Breaking schema changes after v1 should be explicit (major bump + documented migration or export/import), not open-ended incremental `version < N` steps.
+
+There is no second schema-version system elsewhere in the repo today — persistence versioning lives only in `server/src/db.ts`.

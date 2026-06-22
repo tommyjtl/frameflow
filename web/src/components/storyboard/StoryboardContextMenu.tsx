@@ -1,6 +1,6 @@
 import { useReactFlow } from '@xyflow/react'
 import { useStoryboardCardActions } from './StoryboardCardActionsContext'
-import { isVideoNodeData, type MediaCardNodeType } from './storyboardTypes'
+import { isImageNodeData, isVideoNodeData, type MediaCardNodeType } from './storyboardTypes'
 
 export type StoryboardContextMenuState = {
   nodeId: string
@@ -23,6 +23,7 @@ export function StoryboardContextMenu({
     deleteNode,
     canExtractFrame,
     extractFrame,
+    enterCropMode,
   } = useStoryboardCardActions()
   const { getNode } = useReactFlow<MediaCardNodeType>()
 
@@ -32,7 +33,13 @@ export function StoryboardContextMenu({
 
   const node = getNode(menu.nodeId)
   const isVideo = node != null && isVideoNodeData(node.data)
+  const imageData =
+    node != null && isImageNodeData(node.data) ? node.data : null
   const extractReady = canExtractFrame(menu.nodeId)
+  const cropReady =
+    imageData != null &&
+    Boolean(imageData.src) &&
+    imageData.importStatus !== 'downloading'
 
   const runAction = (action: () => void) => {
     action()
@@ -68,6 +75,22 @@ export function StoryboardContextMenu({
           onClick={() => runAction(() => void extractFrame(menu.nodeId))}
         >
           Extract frame
+        </button>
+      ) : null}
+      {imageData != null ? (
+        <button
+          type="button"
+          className="storyboard-context-menu__item"
+          role="menuitem"
+          disabled={!cropReady}
+          title={
+            cropReady
+              ? undefined
+              : 'Wait for the image to finish loading before cropping.'
+          }
+          onClick={() => runAction(() => enterCropMode(menu.nodeId))}
+        >
+          Crop
         </button>
       ) : null}
       <button

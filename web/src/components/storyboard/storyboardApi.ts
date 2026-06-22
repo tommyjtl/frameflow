@@ -1,6 +1,6 @@
 export type AssetKind = 'video' | 'image'
 
-export type NodeKind = 'video' | 'image' | 'drawing'
+export type NodeKind = 'video' | 'image' | 'drawing' | 'text'
 
 export type AssetRecord = {
   id: string
@@ -43,6 +43,44 @@ export type BoardResponse = BoardPayload & {
 
 export type AssetUploadResponse = {
   asset: AssetRecord
+}
+
+export type ImportPlatform = 'youtube'
+
+export type ImportJobSnapshot = {
+  id: string
+  nodeId: string
+  sourceUrl: string
+  platform: ImportPlatform
+  status: 'queued' | 'downloading' | 'complete' | 'error'
+  progress: number
+  title: string | null
+  assetId: string | null
+  errorMessage: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type StartImportUrlResponse = {
+  jobId: string
+  platform: ImportPlatform
+  title: string | null
+}
+
+export type ImportCompletePayload = {
+  assetId: string
+  url: string
+  kind: AssetKind
+  title: string
+  naturalWidth?: number
+  naturalHeight?: number
+}
+
+export type ImportJobEventHandlers = {
+  onMetadata?: (data: { title: string | null; platform: ImportPlatform }) => void
+  onProgress?: (data: { percent: number; title: string | null }) => void
+  onComplete?: (data: ImportCompletePayload) => void
+  onError?: (data: { message: string }) => void
 }
 
 class StoryboardApiError extends Error {
@@ -123,6 +161,62 @@ export async function deleteAsset(assetId: string): Promise<void> {
   }
 
   throw new StoryboardApiError(message, response.status)
+}
+
+export async function startUrlImport(input: {
+  url: string
+  nodeId: string
+}): Promise<StartImportUrlResponse> {
+  const response = await fetch('/api/import/url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+
+  return parseJson<StartImportUrlResponse>(response)
+}
+
+export async function fetchImportJob(jobId: string): Promise<ImportJobSnapshot> {
+  const response = await fetch(`/api/import/${jobId}`)
+  return parseJson<ImportJobSnapshot>(response)
+}
+
+export function subscribeImportJobEvents(
+  jobId: string,
+  handlers: ImportJobEventHandlers,
+): () => void {
+  const source = new EventSource(`/api/import/${jobId}/stream`)
+
+  const listen = <T>(eventName: string, handler?: (data: T) => void) => {
+    if (!handler) {
+      return
+    }
+
+    source.addEventListener(eventName, (event) => {
+      try {
+        const data = JSON.parse((event as MessageEvent).data) as T
+        handler(data)
+      } catch {
+        // ignore malformed SSE payloads
+      }
+    })
+  }
+
+  listen<{ title: string | null; platform: ImportPlatform }>(
+    'metadata',
+    handlers.onMetadata,
+  )
+  listen<{ percent: number; title: string | null }>('progress', handlers.onProgress)
+  listen<ImportCompletePayload>('complete', handlers.onComplete)
+  listen<{ message: string }>('error', handlers.onError)
+
+  source.onerror = () => {
+    source.close()
+  }
+
+  return () => {
+    source.close()
+  }
 }
 
 export { StoryboardApiError }

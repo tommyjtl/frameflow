@@ -1,6 +1,6 @@
 export type AssetKind = 'video' | 'image'
 
-export type NodeKind = 'video' | 'image' | 'drawing'
+export type NodeKind = 'video' | 'image' | 'drawing' | 'text'
 
 export type AssetRecord = {
   id: string
@@ -43,4 +43,37 @@ export type BoardResponse = BoardPayload & {
 
 export type AssetUploadResponse = {
   asset: AssetRecord
+}
+
+export type ImportPlatform = 'youtube'
+
+export type ImportJobStatus = 'queued' | 'downloading' | 'complete' | 'error'
+
+export type ImportJobRecord = {
+  id: string
+  nodeId: string
+  sourceUrl: string
+  platform: ImportPlatform
+  status: ImportJobStatus
+  progress: number
+  title: string | null
+  assetId: string | null
+  errorMessage: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type StartImportUrlResponse = {
+  jobId: string
+  platform: ImportPlatform
+  title: string | null
+}
+
+export type ImportCompletePayload = {
+  assetId: string
+  url: string
+  kind: AssetKind
+  title: string
+  naturalWidth?: number
+  naturalHeight?: number
 }

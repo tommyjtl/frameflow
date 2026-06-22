@@ -8,6 +8,7 @@
 :root {
   --text: #9ca3af;
   --text-h: #f3f4f6;
+  --text-muted: var(--muted-foreground);
   --bg: #16171d;
   --border: oklch(0.922 0 0);
   --code-bg: #1f2028;
@@ -22,8 +23,6 @@
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
   color-scheme: dark;
   color: var(--text);
   background: var(--bg);
@@ -31,10 +30,6 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 
   --background: oklch(1 0 0);
 
@@ -118,7 +113,7 @@ body {
 }
 
 h1,
-h2 {
+h2:not([data-slot='dialog-title']) {
   font-family: var(--heading);
   font-weight: 500;
   color: var(--text-h);
@@ -133,7 +128,7 @@ h1 {
     margin: 20px 0;
   }
 }
-h2 {
+h2:not([data-slot='dialog-title']) {
   font-size: 24px;
   line-height: 118%;
   letter-spacing: -0.24px;
@@ -183,6 +178,7 @@ code {
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
+  --color-text-muted: var(--text-muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -240,8 +236,14 @@ code {
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;}
-  body {
-    @apply bg-background text-foreground;}
+    @apply border-border outline-ring/50;
+  }
   html {
-    @apply font-sans;}}
+    @apply font-sans;
+    font-size: 16px;
+    line-height: 1.45;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

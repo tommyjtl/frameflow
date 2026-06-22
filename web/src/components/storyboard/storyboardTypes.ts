@@ -4,6 +4,13 @@ type MediaCardBaseData = {
   label: string
   src: string
   assetId?: string | null
+  sourceUrl?: string
+  platform?: 'youtube' | 'instagram'
+  importJobId?: string
+  importStatus?: 'downloading' | 'complete' | 'error'
+  importProgress?: number
+  importTitle?: string
+  importErrorMessage?: string
 }
 
 export type VideoMediaNodeData = MediaCardBaseData & {
@@ -26,16 +33,25 @@ export type MediaNodeData = VideoMediaNodeData | ImageMediaNodeData
 
 export type MediaCardNodeType = Node<MediaNodeData, 'mediaCard'>
 
+export type ImageCardNodeType = Node<ImageMediaNodeData, 'mediaCard'>
+
 export const MEDIA_CARD_NODE_TYPE = 'mediaCard' as const
 
-export type BoardInteractionMode = 'select' | 'draw'
+export type BoardInteractionMode = 'select' | 'draw' | 'text'
 
 export type FreehandStrokePoint = [number, number, number?]
 
 export const FREEHAND_DRAW_NODE_TYPE = 'freehandDraw' as const
+export const TEXT_NOTE_NODE_TYPE = 'textNote' as const
 export const FREEHAND_STROKE_COLOR = '#ffffff' as const
 export const FREEHAND_DRAW_Z_INDEX_BASE = 10
+export const TEXT_NOTE_Z_INDEX = FREEHAND_DRAW_Z_INDEX_BASE + 1
 export const MEDIA_CARD_Z_INDEX = 0
+export const STORYBOARD_TEXT_NOTE_MIN_WIDTH = 32
+export const STORYBOARD_TEXT_NOTE_MIN_HEIGHT = 28
+export const STORYBOARD_TEXT_DEFAULT_FONT_SIZE = 24
+export const STORYBOARD_TEXT_MIN_SCALE = 0.25
+export const STORYBOARD_TEXT_MAX_SCALE = 8
 
 export type FreehandDrawNodeData = {
   kind: 'drawing'
@@ -46,7 +62,77 @@ export type FreehandDrawNodeData = {
 
 export type FreehandDrawNodeType = Node<FreehandDrawNodeData, 'freehandDraw'>
 
-export type StoryboardNodeType = MediaCardNodeType | FreehandDrawNodeType
+export type TextNoteNodeData = {
+  kind: 'text'
+  text: string
+  fontSize?: number
+  scale?: number
+  /** Natural width at scale 1, frozen when editing ends. */
+  referenceWidth?: number
+}
+
+export function getTextNoteEffectiveFontSize(data: TextNoteNodeData): number {
+  return (
+    (data.fontSize ?? STORYBOARD_TEXT_DEFAULT_FONT_SIZE) * (data.scale ?? 1)
+  )
+}
+
+const TEXT_NOTE_MEASURE_MIRROR_ID = 'storyboard-text-measure'
+
+export function measureTextNoteDimensions(
+  text: string,
+  fontSize: number,
+): { width: number; height: number } {
+  if (typeof document === 'undefined') {
+    return {
+      width: STORYBOARD_TEXT_NOTE_MIN_WIDTH,
+      height: STORYBOARD_TEXT_NOTE_MIN_HEIGHT,
+    }
+  }
+
+  let mirror = document.getElementById(
+    TEXT_NOTE_MEASURE_MIRROR_ID,
+  ) as HTMLSpanElement | null
+
+  if (!mirror) {
+    mirror = document.createElement('span')
+    mirror.id = TEXT_NOTE_MEASURE_MIRROR_ID
+    mirror.setAttribute('aria-hidden', 'true')
+    mirror.style.cssText =
+      'position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:pre;pointer-events:none;'
+    document.body.appendChild(mirror)
+  }
+
+  mirror.style.fontFamily = "tldraw_draw, 'Caveat', cursive"
+  mirror.style.fontSize = `${fontSize}px`
+  mirror.style.lineHeight = '1.25'
+
+  const lines = text.split('\n')
+  const lineHeightPx = fontSize * 1.25
+  let maxWidth = 0
+
+  for (const line of lines) {
+    mirror.textContent = line.length > 0 ? line : '\u00a0'
+    maxWidth = Math.max(maxWidth, mirror.getBoundingClientRect().width)
+  }
+
+  return {
+    width: Math.max(STORYBOARD_TEXT_NOTE_MIN_WIDTH, Math.ceil(maxWidth)),
+    height: Math.max(
+      STORYBOARD_TEXT_NOTE_MIN_HEIGHT,
+      Math.ceil(lines.length * lineHeightPx),
+    ),
+  }
+}
+
+export type TextNoteNodeType = Node<TextNoteNodeData, typeof TEXT_NOTE_NODE_TYPE>
+
+export type StoryboardNodeType =
+  | MediaCardNodeType
+  | FreehandDrawNodeType
+  | TextNoteNodeType
+
+export type StoryboardCopyableNode = MediaCardNodeType | TextNoteNodeType
 
 export const STORYBOARD_NODE_X_GAP = 420
 export const STORYBOARD_NODE_Y = 80
@@ -68,6 +154,10 @@ export const STORYBOARD_PLAYBACK_CLICK_INSET = {
 export const STORYBOARD_DEFAULT_CANVAS_WIDTH = 320
 export const STORYBOARD_DEFAULT_CANVAS_HEIGHT = 180
 export const STORYBOARD_NODE_HEADER_HEIGHT = 38
+export const STORYBOARD_URL_IMPORT_BODY_SIZE = 512
+export const STORYBOARD_URL_IMPORT_VIDEO_NODE_WIDTH = STORYBOARD_URL_IMPORT_BODY_SIZE
+export const STORYBOARD_URL_IMPORT_VIDEO_NODE_HEIGHT =
+  STORYBOARD_URL_IMPORT_BODY_SIZE + STORYBOARD_NODE_HEADER_HEIGHT
 export const STORYBOARD_DEFAULT_NODE_WIDTH = STORYBOARD_DEFAULT_CANVAS_WIDTH
 export const STORYBOARD_DEFAULT_NODE_HEIGHT =
   STORYBOARD_DEFAULT_CANVAS_HEIGHT + STORYBOARD_NODE_HEADER_HEIGHT
@@ -253,6 +343,36 @@ export function isImageNodeData(data: MediaNodeData): data is ImageMediaNodeData
   return data.kind === 'image'
 }
 
+/** Node size for a video card body, preserving asset aspect ratio plus header. */
+export function getVideoNodeDimensions(
+  naturalWidth?: number,
+  naturalHeight?: number,
+  seedBodyHeight: number = STORYBOARD_URL_IMPORT_BODY_SIZE,
+): { width: number; height: number } {
+  if (
+    !naturalWidth ||
+    !naturalHeight ||
+    naturalWidth <= 0 ||
+    naturalHeight <= 0
+  ) {
+    return {
+      width: STORYBOARD_DEFAULT_NODE_WIDTH,
+      height: STORYBOARD_DEFAULT_NODE_HEIGHT,
+    }
+  }
+
+  const body = imageBodyFromNaturalAspect(
+    naturalWidth,
+    naturalHeight,
+    seedBodyHeight,
+  )
+
+  return {
+    width: body.bodyWidth,
+    height: body.bodyHeight + STORYBOARD_NODE_HEADER_HEIGHT,
+  }
+}
+
 export function getCanvasDimensions(
   nodeWidth?: number,
   nodeHeight?: number,
@@ -288,6 +408,36 @@ function createMediaCardNode(
   }
 }
 
+export function createUrlImportPlaceholderNode(
+  id: string,
+  position: { x: number; y: number },
+  data: {
+    sourceUrl: string
+    platform: 'youtube'
+    importJobId?: string
+    importTitle?: string
+  },
+): MediaCardNodeType {
+  return createVideoNode(
+    id,
+    position,
+    {
+      label: data.importTitle ?? 'Importing…',
+      src: '',
+      sourceUrl: data.sourceUrl,
+      platform: data.platform,
+      importJobId: data.importJobId,
+      importStatus: 'downloading',
+      importProgress: 0,
+      importTitle: data.importTitle,
+    },
+    {
+      width: STORYBOARD_URL_IMPORT_VIDEO_NODE_WIDTH,
+      height: STORYBOARD_URL_IMPORT_VIDEO_NODE_HEIGHT,
+    },
+  )
+}
+
 export function createVideoNode(
   id: string,
   position: { x: number; y: number },
@@ -321,6 +471,48 @@ export function isFreehandDrawNode(
   node: StoryboardNodeType,
 ): node is FreehandDrawNodeType {
   return node.type === FREEHAND_DRAW_NODE_TYPE
+}
+
+export function isTextNoteNode(node: StoryboardNodeType): node is TextNoteNodeType {
+  return node.type === TEXT_NOTE_NODE_TYPE
+}
+
+export function isCopyableStoryboardNode(
+  node: StoryboardNodeType,
+): node is StoryboardCopyableNode {
+  return !isFreehandDrawNode(node)
+}
+
+export function createTextNoteNode(
+  id: string,
+  position: { x: number; y: number },
+  data: {
+    text?: string
+    fontSize?: number
+    scale?: number
+    referenceWidth?: number
+  } = {},
+  dimensions: {
+    width?: number
+    height?: number
+  } = {},
+): TextNoteNodeType {
+  return {
+    id,
+    type: TEXT_NOTE_NODE_TYPE,
+    position,
+    dragHandle: STORYBOARD_DRAG_HANDLE,
+    width: dimensions.width ?? STORYBOARD_TEXT_NOTE_MIN_WIDTH,
+    height: dimensions.height ?? STORYBOARD_TEXT_NOTE_MIN_HEIGHT,
+    zIndex: TEXT_NOTE_Z_INDEX,
+    data: {
+      kind: 'text',
+      text: data.text ?? '',
+      fontSize: data.fontSize ?? STORYBOARD_TEXT_DEFAULT_FONT_SIZE,
+      scale: data.scale ?? 1,
+      referenceWidth: data.referenceWidth,
+    },
+  }
 }
 
 export function createFreehandNode(

@@ -18,6 +18,7 @@ type StoryboardCardActionsContextValue = {
   unregisterFrameCapture: (nodeId: string) => void
   canExtractFrame: (nodeId: string) => boolean
   extractFrame: (nodeId: string) => Promise<void>
+  enterCropMode: (nodeId: string) => void
 }
 
 const StoryboardCardActionsContext =
@@ -30,6 +31,7 @@ type StoryboardCardActionsProviderProps = {
   unregisterFrameCapture: (nodeId: string) => void
   canExtractFrame: (nodeId: string) => boolean
   extractFrame: (nodeId: string) => Promise<void>
+  enterCropMode: (nodeId: string) => void
   children: ReactNode
 }
 
@@ -40,6 +42,7 @@ export function StoryboardCardActionsProvider({
   unregisterFrameCapture,
   canExtractFrame,
   extractFrame,
+  enterCropMode,
   children,
 }: StoryboardCardActionsProviderProps) {
   const [pendingRenameNodeId, setPendingRenameNodeId] = useState<string | null>(
@@ -65,6 +68,7 @@ export function StoryboardCardActionsProvider({
       unregisterFrameCapture,
       canExtractFrame,
       extractFrame,
+      enterCropMode,
     }),
     [
       pendingRenameNodeId,
@@ -76,6 +80,7 @@ export function StoryboardCardActionsProvider({
       unregisterFrameCapture,
       canExtractFrame,
       extractFrame,
+      enterCropMode,
     ],
   )
 

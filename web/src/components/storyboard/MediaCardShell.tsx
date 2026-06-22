@@ -11,6 +11,7 @@ import { MediaCardRenameOverlay } from './MediaCardRenameOverlay'
 type MediaCardShellProps = {
   label: string
   selected?: boolean
+  showResizer?: boolean
   showHeader?: boolean
   header?: ReactNode
   bodyClassName?: string
@@ -23,6 +24,7 @@ type MediaCardShellProps = {
 export function MediaCardShell({
   label,
   selected = false,
+  showResizer = true,
   showHeader = true,
   header,
   bodyClassName,
@@ -34,11 +36,11 @@ export function MediaCardShell({
   return (
     <div className="media-card-shell">
       <NodeResizer
-        isVisible={selected}
+        isVisible={selected && showResizer}
         minWidth={minWidth}
         minHeight={minHeight}
         keepAspectRatio={keepAspectRatio}
-        color="var(--accent)"
+        color="var(--storyboard-selection)"
         lineClassName="media-card__resize-line"
         handleClassName="media-card__resize-handle"
       />

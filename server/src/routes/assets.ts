@@ -4,6 +4,7 @@ import { ASSETS_DIR } from '../config'
 import {
   AssetValidationError,
   assetFileName,
+  parseByteRange,
   validateUploadedFile,
 } from '../assets'
 import {
@@ -81,7 +82,11 @@ export function handleAssetDelete(assetId: string): Response {
   return new Response(null, { status: 204 })
 }
 
-export async function handleAssetFile(assetId: string, fileName: string): Promise<Response> {
+export async function handleAssetFile(
+  req: Request,
+  assetId: string,
+  fileName: string,
+): Promise<Response> {
   const asset = findAssetById(assetId)
 
   if (!asset) {
@@ -101,10 +106,43 @@ export async function handleAssetFile(assetId: string, fileName: string): Promis
     return new Response('Not Found', { status: 404 })
   }
 
+  const fileSize = file.size
+  const baseHeaders = {
+    'Content-Type': asset.mimeType,
+    'Cache-Control': 'private, max-age=31536000, immutable',
+    'Accept-Ranges': 'bytes',
+  }
+
+  const range = parseByteRange(req.headers.get('range'), fileSize)
+
+  if (range === 'unsatisfiable') {
+    return new Response(null, {
+      status: 416,
+      headers: {
+        ...baseHeaders,
+        'Content-Range': `bytes */${fileSize}`,
+      },
+    })
+  }
+
+  if (range) {
+    const { start, end } = range
+    const chunkSize = end - start + 1
+
+    return new Response(file.slice(start, end + 1), {
+      status: 206,
+      headers: {
+        ...baseHeaders,
+        'Content-Length': String(chunkSize),
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      },
+    })
+  }
+
   return new Response(file, {
     headers: {
-      'Content-Type': asset.mimeType,
-      'Cache-Control': 'private, max-age=31536000, immutable',
+      ...baseHeaders,
+      'Content-Length': String(fileSize),
     },
   })
 }

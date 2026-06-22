@@ -29,6 +29,7 @@ type UseStoryboardIngestOptions = {
   }
   onMessage: (text: string, type: 'error' | 'info') => void
   playgroundRef: React.RefObject<HTMLElement | null>
+  takeSnapshot?: () => void
 }
 
 export function useStoryboardIngest({
@@ -38,6 +39,7 @@ export function useStoryboardIngest({
   screenToFlowPosition,
   onMessage,
   playgroundRef,
+  takeSnapshot,
 }: UseStoryboardIngestOptions) {
   const [dragActive, setDragActive] = useState(false)
   const dragDepthRef = useRef(0)
@@ -66,6 +68,7 @@ export function useStoryboardIngest({
       let successCount = 0
       let lastError: string | null = null
       const startCount = getNodes().length
+      let didSnapshot = false
 
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index]
@@ -84,6 +87,11 @@ export function useStoryboardIngest({
             startCount + successCount + 1,
           )
           const nodeId = crypto.randomUUID()
+
+          if (!didSnapshot) {
+            takeSnapshot?.()
+            didSnapshot = true
+          }
 
           if (asset.kind === 'video') {
             const position = nodePositionForDrop(
@@ -151,7 +159,7 @@ export function useStoryboardIngest({
         onMessage(lastError, 'error')
       }
     },
-    [enabled, getNodes, onMessage, setNodes],
+    [enabled, getNodes, onMessage, setNodes, takeSnapshot],
   )
 
   const ingestPasteImages = useCallback(

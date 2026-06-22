@@ -6,6 +6,11 @@ import {
   handleAssetFile,
   handleAssetUpload,
 } from './routes/assets'
+import {
+  handleGetImportJob,
+  handleImportJobStream,
+  handleStartImportUrl,
+} from './routes/import'
 import type { BoardPayload } from './types'
 
 getDb()
@@ -46,6 +51,22 @@ const server = Bun.serve({
       },
     },
 
+    '/api/import/url': {
+      POST: handleStartImportUrl,
+    },
+
+    '/api/import/:jobId/stream': {
+      GET(req) {
+        return handleImportJobStream(req.params.jobId)
+      },
+    },
+
+    '/api/import/:jobId': {
+      GET(req) {
+        return handleGetImportJob(req.params.jobId)
+      },
+    },
+
     '/assets/:fileName': async (req) => {
       const fileName = req.params.fileName
       const assetId = fileName.split('.')[0]
@@ -54,7 +75,7 @@ const server = Bun.serve({
         return new Response('Not Found', { status: 404 })
       }
 
-      return handleAssetFile(assetId, fileName)
+      return handleAssetFile(req, assetId, fileName)
     },
   },
 

@@ -7,11 +7,13 @@ import {
 } from 'react'
 import { useNodeId, useReactFlow } from '@xyflow/react'
 import { useStoryboardCardActions } from './StoryboardCardActionsContext'
+import { useStoryboardHistory } from './StoryboardHistoryContext'
 import type { MediaCardNodeType } from './storyboardTypes'
 
 export function useMediaCardRename(label: string) {
   const nodeId = useNodeId()
   const { setNodes } = useReactFlow<MediaCardNodeType>()
+  const { takeSnapshot } = useStoryboardHistory()
   const { pendingRenameNodeId, clearRenameRequest } = useStoryboardCardActions()
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(label)
@@ -49,6 +51,7 @@ export function useMediaCardRename(label: string) {
     }
 
     if (trimmed && trimmed !== label) {
+      takeSnapshot()
       setNodes((nodes) =>
         nodes.map((node) =>
           node.id === nodeId
@@ -61,7 +64,7 @@ export function useMediaCardRename(label: string) {
     }
 
     setIsEditing(false)
-  }, [draft, label, nodeId, setNodes])
+  }, [draft, label, nodeId, setNodes, takeSnapshot])
 
   const cancelRename = useCallback(() => {
     setDraft(label)

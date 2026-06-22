@@ -9,37 +9,53 @@ import {
   type Edge,
   type NodeChange,
   type NodeMouseHandler,
+  type OnEdgesChange,
 } from '@xyflow/react'
-import { DEFAULT_SAMPLE_VIDEO } from '../../frameflow'
+import { StoryboardCardActionsProvider } from './StoryboardCardActionsContext'
+import { StoryboardHistoryProvider } from './StoryboardHistoryContext'
+import { StoryboardTextEditingProvider, useStoryboardTextEditing } from './StoryboardTextEditingContext'
+import {
+  StoryboardImageCropProvider,
+  useStoryboardImageCrop,
+} from './StoryboardImageCropContext'
 import {
   boardToFlow,
   createDefaultStoryboard,
   flowToBoardPayload,
 } from './boardMapping'
-import { StoryboardCardActionsProvider } from './StoryboardCardActionsContext'
+import {
+  buildClipboardFromSelection,
+  cloneClipboardItems,
+  type StoryboardClipboard,
+} from './storyboardClipboard'
 import { StoryboardFlow, isMediaCardContextMenuTarget } from './StoryboardFlow'
+import { FrameExtractDragProvider } from './FrameExtractDragProvider'
+import {
+  extractFrameToPosition,
+  getDefaultExtractFramePosition,
+  getExtractFrameErrorMessage,
+} from './frameExtractPlacement'
 import { type StoryboardContextMenuState } from './StoryboardContextMenu'
-import { deleteAsset, fetchBoard, saveBoard, StoryboardApiError, uploadAsset } from './storyboardApi'
+import { deleteAsset, fetchBoard, saveBoard, StoryboardApiError } from './storyboardApi'
 import type { FrameCaptureRegistration } from './storyboardFrameCapture'
 import { useStoryboardIngest } from './useStoryboardIngest'
+import { useUrlImport } from './useUrlImport'
 import { useStoryboardHotkeys } from './useStoryboardHotkeys'
+import { useStoryboardUndoRedo } from './useStoryboardUndoRedo'
 import {
-  STORYBOARD_DEFAULT_NODE_WIDTH,
   STORYBOARD_DUPLICATE_OFFSET,
-  STORYBOARD_EXTRACT_FRAME_GAP,
-  STORYBOARD_NODE_X_GAP,
-  STORYBOARD_NODE_Y,
-  createImageNode,
-  createVideoNode,
-  getCanvasDimensions,
+  isCopyableStoryboardNode,
   isFreehandDrawNode,
   isImageNodeData,
+  isTextNoteNode,
   isVideoNodeData,
   normalizeImageNodeDimensions,
+  createTextNoteNode,
   type BoardInteractionMode,
   type FreehandDrawNodeType,
   MEDIA_CARD_NODE_TYPE,
   type MediaCardNodeType,
+  type StoryboardCopyableNode,
   type StoryboardNodeType,
 } from './storyboardTypes'
 import '@xyflow/react/dist/style.css'
@@ -66,6 +82,300 @@ function FitViewWhenReady({ ready }: { ready: boolean }) {
   return null
 }
 
+type StoryboardPlaygroundCanvasProps = {
+  nodes: StoryboardNodeType[]
+  setNodes: React.Dispatch<React.SetStateAction<StoryboardNodeType[]>>
+  edges: Edge[]
+  interactionMode: BoardInteractionMode
+  loadState: LoadState
+  loadError: string | null
+  saveState: SaveState
+  saveError: string | null
+  ingestMessage: { text: string; type: 'error' | 'info' } | null
+  contextMenu: StoryboardContextMenuState
+  flowRef: React.RefObject<HTMLDivElement | null>
+  playgroundRef: React.RefObject<HTMLDivElement | null>
+  dragActive: boolean
+  handleNodesChange: (changes: NodeChange<StoryboardNodeType>[]) => void
+  onEdgesChange: OnEdgesChange<Edge>
+  onConnect: (connection: Connection) => void
+  onNodeContextMenu: NodeMouseHandler<StoryboardNodeType>
+  closeContextMenu: () => void
+  handleInteractionModeChange: (mode: BoardInteractionMode) => void
+  handleStrokeComplete: (node: FreehandDrawNodeType) => void
+  beginDragHistory: () => void
+  commitDragHistory: () => void
+  handleBeforeDelete: () => Promise<boolean>
+  canUndo: boolean
+  canRedo: boolean
+  undo: () => boolean
+  redo: () => boolean
+  takeSnapshot: () => void
+  startUrlImport: (url: string) => Promise<void>
+  hydrateBoard: () => Promise<void>
+  handleDrop: (event: React.DragEvent) => void
+  handleDragOver: (event: React.DragEvent) => void
+  handleDragEnter: (event: React.DragEvent) => void
+  handleDragLeave: (event: React.DragEvent) => void
+  duplicateNode: (nodeId: string) => void
+  deleteNode: (nodeId: string) => void
+  registerFrameCapture: (nodeId: string, registration: FrameCaptureRegistration) => void
+  unregisterFrameCapture: (nodeId: string) => void
+  canExtractFrame: (nodeId: string) => boolean
+  extractFrame: (nodeId: string) => Promise<void>
+  copySelectedNodes: () => boolean
+  pasteClipboardNodes: () => boolean
+  persistBoardNow: () => Promise<void>
+  fileInputRef: React.RefObject<HTMLInputElement | null>
+  handleFileInputChange: (event: React.ChangeEvent<HTMLInputElement>) => void
+  screenToFlowPosition: (position: { x: number; y: number }) => { x: number; y: number }
+}
+
+function StoryboardPlaygroundCanvas({
+  nodes,
+  setNodes,
+  edges,
+  interactionMode,
+  loadState,
+  loadError,
+  saveState,
+  saveError,
+  ingestMessage,
+  contextMenu,
+  flowRef,
+  playgroundRef,
+  dragActive,
+  handleNodesChange,
+  onEdgesChange,
+  onConnect,
+  onNodeContextMenu,
+  closeContextMenu,
+  handleInteractionModeChange,
+  handleStrokeComplete,
+  beginDragHistory,
+  commitDragHistory,
+  handleBeforeDelete,
+  canUndo,
+  canRedo,
+  undo,
+  redo,
+  takeSnapshot,
+  startUrlImport,
+  hydrateBoard,
+  handleDrop,
+  handleDragOver,
+  handleDragEnter,
+  handleDragLeave,
+  duplicateNode,
+  deleteNode,
+  registerFrameCapture,
+  unregisterFrameCapture,
+  canExtractFrame,
+  extractFrame,
+  copySelectedNodes,
+  pasteClipboardNodes,
+  persistBoardNow,
+  fileInputRef,
+  handleFileInputChange,
+  screenToFlowPosition,
+}: StoryboardPlaygroundCanvasProps) {
+  const { editingTextNodeId, enterTextEditing, exitTextEditing } =
+    useStoryboardTextEditing()
+  const { croppingNodeId, enterCropMode, cancelCrop, applyCrop } =
+    useStoryboardImageCrop()
+
+  const createTextAtFlowPosition = useCallback(
+    (position: { x: number; y: number }) => {
+      const nodeId = crypto.randomUUID()
+      const textNode = createTextNoteNode(nodeId, position, { text: '' })
+
+      takeSnapshot()
+      setNodes((currentNodes) => [
+        ...currentNodes.map((node) => ({ ...node, selected: false })),
+        textNode,
+      ])
+      enterTextEditing(nodeId)
+    },
+    [enterTextEditing, setNodes, takeSnapshot],
+  )
+
+  const deselectAllNodes = useCallback(() => {
+    setNodes((currentNodes) =>
+      currentNodes.some((node) => node.selected)
+        ? currentNodes.map((node) =>
+            node.selected ? { ...node, selected: false } : node,
+          )
+        : currentNodes,
+    )
+  }, [setNodes])
+
+  const selectAllNodes = useCallback(() => {
+    setNodes((currentNodes) => {
+      if (currentNodes.length === 0) {
+        return currentNodes
+      }
+
+      if (currentNodes.every((node) => node.selected)) {
+        return currentNodes
+      }
+
+      return currentNodes.map((node) =>
+        node.selected ? node : { ...node, selected: true },
+      )
+    })
+  }, [setNodes])
+
+  const handlePaneClick = useCallback(
+    (event: React.MouseEvent) => {
+      closeContextMenu()
+
+      if (loadState !== 'ready') {
+        return
+      }
+
+      if (event.detail === 2) {
+        if (interactionMode === 'select') {
+          createTextAtFlowPosition(
+            screenToFlowPosition({
+              x: event.clientX,
+              y: event.clientY,
+            }),
+          )
+        }
+
+        return
+      }
+
+      if (event.detail > 1) {
+        return
+      }
+
+      if (interactionMode === 'select' && editingTextNodeId) {
+        exitTextEditing()
+        return
+      }
+
+      if (interactionMode !== 'text') {
+        return
+      }
+
+      createTextAtFlowPosition(
+        screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        }),
+      )
+    },
+    [
+      closeContextMenu,
+      createTextAtFlowPosition,
+      editingTextNodeId,
+      exitTextEditing,
+      interactionMode,
+      loadState,
+      screenToFlowPosition,
+    ],
+  )
+
+  const hasSelectedTextNode = nodes.some(
+    (node) => isTextNoteNode(node) && node.selected,
+  )
+
+  useStoryboardHotkeys({
+    enabled: loadState === 'ready',
+    interactionMode,
+    contextMenuOpen: contextMenu !== null,
+    editingTextNodeId,
+    croppingNodeId,
+    hasSelectedTextNode,
+    onInteractionModeChange: handleInteractionModeChange,
+    onCloseContextMenu: closeContextMenu,
+    onExitTextEditing: exitTextEditing,
+    onCancelCrop: cancelCrop,
+    onApplyCrop: applyCrop,
+    onDeselectAllNodes: deselectAllNodes,
+    onSelectAllNodes: selectAllNodes,
+    onEnterTextEditing: enterTextEditing,
+    selectedTextNodeId:
+      nodes.find((node) => isTextNoteNode(node) && node.selected)?.id ?? null,
+    onManualSave: () => void persistBoardNow(),
+    onCopy: copySelectedNodes,
+    onPaste: pasteClipboardNodes,
+    onUndo: undo,
+    onRedo: redo,
+    canUndo,
+    canRedo,
+  })
+
+  const statusMessage =
+    saveState === 'saving'
+      ? 'Saving…'
+      : saveState === 'error'
+        ? saveError
+        : 'Saved'
+
+  return (
+    <StoryboardCardActionsProvider
+      duplicateNode={duplicateNode}
+      deleteNode={deleteNode}
+      registerFrameCapture={registerFrameCapture}
+      unregisterFrameCapture={unregisterFrameCapture}
+      canExtractFrame={canExtractFrame}
+      extractFrame={extractFrame}
+      enterCropMode={enterCropMode}
+    >
+      <div
+        ref={playgroundRef}
+        className="storyboard-playground"
+        tabIndex={0}
+        onDragEnter={interactionMode === 'select' ? handleDragEnter : undefined}
+        onDragLeave={interactionMode === 'select' ? handleDragLeave : undefined}
+        onDragOver={interactionMode === 'select' ? handleDragOver : undefined}
+      >
+        <StoryboardFlow
+          nodes={nodes}
+          edges={edges}
+          interactionMode={interactionMode}
+          loadState={loadState}
+          loadError={loadError}
+          statusMessage={statusMessage}
+          saveState={saveState}
+          ingestMessage={ingestMessage}
+          contextMenu={contextMenu}
+          flowRef={flowRef}
+          dragActive={dragActive}
+          onNodesChange={handleNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onNodeContextMenu={onNodeContextMenu}
+          onPaneClick={handlePaneClick}
+          onCloseContextMenu={closeContextMenu}
+          onImportFromUrl={startUrlImport}
+          onRetryLoad={() => void hydrateBoard()}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onInteractionModeChange={handleInteractionModeChange}
+          onStrokeComplete={handleStrokeComplete}
+          onNodeDragStart={beginDragHistory}
+          onNodeDragStop={commitDragHistory}
+          onSelectionDragStart={beginDragHistory}
+          onSelectionDragStop={commitDragHistory}
+          onBeforeDelete={handleBeforeDelete}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          fitViewReady={loadState === 'ready'}
+          fileInputRef={fileInputRef}
+          onFileInputChange={handleFileInputChange}
+          fitViewSlot={<FitViewWhenReady ready={loadState === 'ready'} />}
+          croppingNodeId={croppingNodeId}
+        />
+      </div>
+    </StoryboardCardActionsProvider>
+  )
+}
+
 function StoryboardPlaygroundInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<StoryboardNodeType>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -80,8 +390,13 @@ function StoryboardPlaygroundInner() {
     type: 'error' | 'info'
   } | null>(null)
   const [contextMenu, setContextMenu] = useState<StoryboardContextMenuState>(null)
+  const contextMenuRef = useRef(contextMenu)
+  contextMenuRef.current = contextMenu
   const isHydratedRef = useRef(false)
   const saveRequestRef = useRef(0)
+  const saveDebounceTimerRef = useRef<number | null>(null)
+  const clipboardRef = useRef<StoryboardClipboard | null>(null)
+  const pasteCountRef = useRef(0)
   const flowRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const playgroundRef = useRef<HTMLDivElement>(null)
@@ -91,8 +406,48 @@ function StoryboardPlaygroundInner() {
     useReactFlow<StoryboardNodeType>()
   const getNodes = useCallback(() => getFlowNodes(), [getFlowNodes])
 
+  const {
+    canUndo,
+    canRedo,
+    takeSnapshot,
+    undo,
+    redo,
+    resetHistory,
+    beginDragHistory,
+    commitDragHistory,
+    handleNodesChange: historyNodesChange,
+    handleBeforeDelete,
+  } = useStoryboardUndoRedo({
+    enabled: loadState === 'ready',
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+  })
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null)
+  }, [])
+
   const handleNodesChange = useCallback(
     (changes: NodeChange<StoryboardNodeType>[]) => {
+      const menu = contextMenuRef.current
+
+      if (menu) {
+        for (const change of changes) {
+          if (
+            change.type === 'select' &&
+            change.selected &&
+            change.id !== menu.nodeId
+          ) {
+            closeContextMenu()
+            break
+          }
+        }
+      }
+
+      historyNodesChange(changes)
+
       const normalizedChanges = changes.map((change) => {
         if (
           change.type !== 'dimensions' ||
@@ -106,6 +461,7 @@ function StoryboardPlaygroundInner() {
 
         if (
           !node ||
+          node.type !== MEDIA_CARD_NODE_TYPE ||
           isFreehandDrawNode(node) ||
           !isImageNodeData(node.data) ||
           !node.data.naturalWidth ||
@@ -133,7 +489,7 @@ function StoryboardPlaygroundInner() {
 
       onNodesChange(normalizedChanges)
     },
-    [getNodes, onNodesChange],
+    [closeContextMenu, getNodes, historyNodesChange, onNodesChange],
   )
 
   const showIngestMessage = useCallback((text: string, type: 'error' | 'info') => {
@@ -148,6 +504,32 @@ function StoryboardPlaygroundInner() {
       ingestMessageTimerRef.current = null
     }, INGEST_MESSAGE_MS)
   }, [])
+
+  const {
+    dragActive,
+    handleDragEnter,
+    handleDragLeave,
+    handleDragOver,
+    handleDrop,
+    ingestFilesAt,
+    getViewportCenterFlowPosition,
+  } = useStoryboardIngest({
+    enabled: loadState === 'ready' && interactionMode === 'select',
+    setNodes,
+    getNodes,
+    screenToFlowPosition,
+    onMessage: showIngestMessage,
+    playgroundRef,
+    takeSnapshot,
+  })
+
+  const { startUrlImport, reconnectUrlImports } = useUrlImport({
+    enabled: loadState === 'ready' && interactionMode === 'select',
+    setNodes,
+    getViewportCenterFlowPosition,
+    onMessage: showIngestMessage,
+    takeSnapshot,
+  })
 
   const hydrateBoard = useCallback(async () => {
     setLoadState('loading')
@@ -166,11 +548,13 @@ function StoryboardPlaygroundInner() {
         const flow = boardToFlow(board)
         setNodes(flow.nodes)
         setEdges(flow.edges)
+        reconnectUrlImports(flow.nodes)
       }
 
       isHydratedRef.current = true
       setLoadState('ready')
       setSaveState('saved')
+      resetHistory()
     } catch (error) {
       isHydratedRef.current = false
       setLoadState('error')
@@ -180,11 +564,47 @@ function StoryboardPlaygroundInner() {
           : 'Could not load the storyboard.',
       )
     }
-  }, [setEdges, setNodes])
+  }, [setEdges, setNodes, reconnectUrlImports, resetHistory])
 
   useEffect(() => {
     void hydrateBoard()
   }, [hydrateBoard])
+
+  const persistBoardNow = useCallback(async () => {
+    if (!isHydratedRef.current || loadState !== 'ready') {
+      return
+    }
+
+    if (saveDebounceTimerRef.current !== null) {
+      window.clearTimeout(saveDebounceTimerRef.current)
+      saveDebounceTimerRef.current = null
+    }
+
+    const requestId = ++saveRequestRef.current
+    setSaveState('saving')
+    setSaveError(null)
+
+    try {
+      await saveBoard(flowToBoardPayload(nodes, edges))
+
+      if (saveRequestRef.current !== requestId) {
+        return
+      }
+
+      setSaveState('saved')
+    } catch (error) {
+      if (saveRequestRef.current !== requestId) {
+        return
+      }
+
+      setSaveState('error')
+      setSaveError(
+        error instanceof StoryboardApiError
+          ? error.message
+          : 'Could not save the storyboard.',
+      )
+    }
+  }, [edges, loadState, nodes])
 
   useEffect(() => {
     if (!isHydratedRef.current || loadState !== 'ready') {
@@ -196,6 +616,8 @@ function StoryboardPlaygroundInner() {
     setSaveError(null)
 
     const timer = window.setTimeout(() => {
+      saveDebounceTimerRef.current = null
+
       void (async () => {
         try {
           await saveBoard(flowToBoardPayload(nodes, edges))
@@ -220,50 +642,68 @@ function StoryboardPlaygroundInner() {
       })()
     }, SAVE_DEBOUNCE_MS)
 
+    saveDebounceTimerRef.current = timer
+
     return () => {
       window.clearTimeout(timer)
+
+      if (saveDebounceTimerRef.current === timer) {
+        saveDebounceTimerRef.current = null
+      }
     }
   }, [edges, loadState, nodes])
 
-  const {
-    dragActive,
-    handleDragEnter,
-    handleDragLeave,
-    handleDragOver,
-    handleDrop,
-    ingestFilesAt,
-    getViewportCenterFlowPosition,
-  } = useStoryboardIngest({
-    enabled: loadState === 'ready' && interactionMode === 'select',
-    setNodes,
-    getNodes,
-    screenToFlowPosition,
-    onMessage: showIngestMessage,
-    playgroundRef,
-  })
-
-  const closeContextMenu = useCallback(() => {
-    setContextMenu(null)
-  }, [])
-
   const onConnect = useCallback(
     (connection: Connection) => {
+      takeSnapshot()
       setEdges((currentEdges) =>
         addEdge({ ...connection, type: 'default' }, currentEdges),
       )
     },
-    [setEdges],
+    [setEdges, takeSnapshot],
   )
 
   const duplicateNode = useCallback(
     (nodeId: string) => {
+      const source = nodes.find((node) => node.id === nodeId)
+
+      if (!source || isFreehandDrawNode(source)) {
+        return
+      }
+
+      takeSnapshot()
+
+      if (isTextNoteNode(source)) {
+        setNodes((currentNodes) => {
+          const duplicate = createTextNoteNode(
+            crypto.randomUUID(),
+            {
+              x: source.position.x + STORYBOARD_DUPLICATE_OFFSET.x,
+              y: source.position.y + STORYBOARD_DUPLICATE_OFFSET.y,
+            },
+            {
+              text: source.data.text,
+              fontSize: source.data.fontSize,
+              scale: source.data.scale,
+              referenceWidth: source.data.referenceWidth,
+            },
+            {
+              width: source.width,
+              height: source.height,
+            },
+          )
+
+          return [
+            ...currentNodes.map((node) =>
+              node.id === nodeId ? { ...node, selected: false } : node,
+            ),
+            duplicate,
+          ]
+        })
+        return
+      }
+
       setNodes((currentNodes) => {
-        const source = currentNodes.find((node) => node.id === nodeId)
-
-        if (!source || isFreehandDrawNode(source)) {
-          return currentNodes
-        }
-
         const duplicate: MediaCardNodeType = {
           ...source,
           id: crypto.randomUUID(),
@@ -283,8 +723,56 @@ function StoryboardPlaygroundInner() {
         ]
       })
     },
-    [setNodes],
+    [nodes, setNodes, takeSnapshot],
   )
+
+  const copySelectedNodes = useCallback((): boolean => {
+    if (loadState !== 'ready' || interactionMode !== 'select') {
+      return false
+    }
+
+    const selected = getNodes().filter(
+      (node): node is StoryboardCopyableNode =>
+        node.selected === true && isCopyableStoryboardNode(node),
+    )
+
+    const clipboard = buildClipboardFromSelection(selected, edges)
+
+    if (!clipboard) {
+      return false
+    }
+
+    clipboardRef.current = clipboard
+    pasteCountRef.current = 0
+    return true
+  }, [edges, getNodes, interactionMode, loadState])
+
+  const pasteClipboardNodes = useCallback((): boolean => {
+    if (loadState !== 'ready' || interactionMode !== 'select') {
+      return false
+    }
+
+    const clipboard = clipboardRef.current
+
+    if (!clipboard) {
+      return false
+    }
+
+    pasteCountRef.current += 1
+
+    const { nodes: pastedNodes, edges: pastedEdges } = cloneClipboardItems(
+      clipboard,
+      pasteCountRef.current,
+    )
+
+    takeSnapshot()
+    setNodes((currentNodes) => [
+      ...currentNodes.map((node) => ({ ...node, selected: false })),
+      ...pastedNodes,
+    ])
+    setEdges((currentEdges) => [...currentEdges, ...pastedEdges])
+    return true
+  }, [interactionMode, loadState, setEdges, setNodes, takeSnapshot])
 
   const deleteNode = useCallback(
     (nodeId: string) => {
@@ -293,6 +781,8 @@ function StoryboardPlaygroundInner() {
       if (!target) {
         return
       }
+
+      takeSnapshot()
 
       const nextNodes = nodes.filter((node) => node.id !== nodeId)
 
@@ -303,7 +793,7 @@ function StoryboardPlaygroundInner() {
         ),
       )
 
-      if (isFreehandDrawNode(target)) {
+      if (target.type !== MEDIA_CARD_NODE_TYPE) {
         return
       }
 
@@ -312,7 +802,7 @@ function StoryboardPlaygroundInner() {
       if (
         assetId &&
         !nextNodes.some((node) => {
-          if (isFreehandDrawNode(node)) {
+          if (node.type !== MEDIA_CARD_NODE_TYPE) {
             return false
           }
 
@@ -324,7 +814,7 @@ function StoryboardPlaygroundInner() {
         })
       }
     },
-    [nodes, setEdges, setNodes],
+    [nodes, setEdges, setNodes, takeSnapshot],
   )
 
   const registerFrameCapture = useCallback(
@@ -344,12 +834,6 @@ function StoryboardPlaygroundInner() {
 
   const extractFrame = useCallback(
     async (nodeId: string) => {
-      const source = getNodes().find((node) => node.id === nodeId)
-
-      if (!source || isFreehandDrawNode(source) || !isVideoNodeData(source.data)) {
-        return
-      }
-
       const registration = frameCaptureRegistryRef.current.get(nodeId)
 
       if (!registration?.canExtract()) {
@@ -360,67 +844,51 @@ function StoryboardPlaygroundInner() {
         return
       }
 
+      const source = getNodes().find((node) => node.id === nodeId)
+
+      if (
+        !source ||
+        source.type !== MEDIA_CARD_NODE_TYPE ||
+        !isVideoNodeData(source.data)
+      ) {
+        return
+      }
+
       try {
-        const captured = await registration.capture()
+        await extractFrameToPosition({
+          sourceNodeId: nodeId,
+          position: getDefaultExtractFramePosition(source),
+          getSource: () => {
+            const current = getNodes().find((node) => node.id === nodeId)
 
-        if (!captured) {
-          showIngestMessage('Could not capture the current frame.', 'error')
-          return
-        }
+            if (
+              !current ||
+              current.type !== MEDIA_CARD_NODE_TYPE ||
+              !isVideoNodeData(current.data)
+            ) {
+              return undefined
+            }
 
-        const { blob, frameIndex } = captured
-        const file = new File(
-          [blob],
-          `${source.data.label}-frame-${frameIndex}.png`,
-          { type: 'image/png' },
-        )
-        const asset = await uploadAsset(file)
-        const canvas = getCanvasDimensions(source.width, source.height)
-        const dimensions = { width: canvas.width, height: canvas.height }
-        const sourceWidth = source.width ?? STORYBOARD_DEFAULT_NODE_WIDTH
-        const imageNodeId = crypto.randomUUID()
-        const imageNode = createImageNode(
-          imageNodeId,
-          {
-            x: source.position.x + sourceWidth + STORYBOARD_EXTRACT_FRAME_GAP,
-            y: source.position.y,
+            return current
           },
-          {
-            label: `${source.data.label} — frame ${frameIndex}`,
-            src: asset.url,
-            assetId: asset.id,
-            naturalWidth: canvas.width,
-            naturalHeight: canvas.height,
-            sourceFrameIndex: frameIndex,
-            extractedFromNodeId: nodeId,
-          },
-          dimensions,
-        )
-
-        setNodes((currentNodes) => [
-          ...currentNodes.map((node) =>
-            node.id === nodeId ? { ...node, selected: false } : node,
-          ),
-          { ...imageNode, selected: true },
-        ])
+          capture: registration.capture,
+          setNodes,
+          takeSnapshot,
+        })
         showIngestMessage('Extracted frame to new image card.', 'info')
       } catch (error) {
-        showIngestMessage(
-          error instanceof StoryboardApiError
-            ? error.message
-            : 'Could not extract the current frame.',
-          'error',
-        )
+        showIngestMessage(getExtractFrameErrorMessage(error), 'error')
       }
     },
-    [getNodes, setNodes, showIngestMessage],
+    [getNodes, setNodes, showIngestMessage, takeSnapshot],
   )
 
   const handleStrokeComplete = useCallback(
     (node: FreehandDrawNodeType) => {
+      takeSnapshot()
       setNodes((currentNodes) => [...currentNodes, node])
     },
-    [setNodes],
+    [setNodes, takeSnapshot],
   )
 
   const handleInteractionModeChange = useCallback(
@@ -430,14 +898,6 @@ function StoryboardPlaygroundInner() {
     },
     [closeContextMenu],
   )
-
-  useStoryboardHotkeys({
-    enabled: loadState === 'ready',
-    interactionMode,
-    contextMenuOpen: contextMenu !== null,
-    onInteractionModeChange: handleInteractionModeChange,
-    onCloseContextMenu: closeContextMenu,
-  })
 
   const onNodeContextMenu: NodeMouseHandler<StoryboardNodeType> = useCallback(
     (event, node) => {
@@ -467,26 +927,6 @@ function StoryboardPlaygroundInner() {
     [],
   )
 
-  const addShot = useCallback(() => {
-    setNodes((currentNodes) => {
-      const maxX = currentNodes.reduce(
-        (max, node) => Math.max(max, node.position.x),
-        0,
-      )
-
-      const nextShot = createVideoNode(
-        crypto.randomUUID(),
-        { x: maxX + STORYBOARD_NODE_X_GAP, y: STORYBOARD_NODE_Y },
-        {
-          label: `Shot ${currentNodes.length + 1}`,
-          src: DEFAULT_SAMPLE_VIDEO,
-        },
-      )
-
-      return [...currentNodes, nextShot]
-    })
-  }, [setNodes])
-
   const handleFileInputChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = event.target.files ? [...event.target.files] : []
@@ -501,61 +941,84 @@ function StoryboardPlaygroundInner() {
     [getViewportCenterFlowPosition, ingestFilesAt],
   )
 
-  const statusMessage =
-    saveState === 'saving'
-      ? 'Saving…'
-      : saveState === 'error'
-        ? saveError
-        : 'Saved'
-
   return (
-    <StoryboardCardActionsProvider
-      duplicateNode={duplicateNode}
-      deleteNode={deleteNode}
-      registerFrameCapture={registerFrameCapture}
-      unregisterFrameCapture={unregisterFrameCapture}
-      canExtractFrame={canExtractFrame}
-      extractFrame={extractFrame}
-    >
-      <div
-        ref={playgroundRef}
-        className="storyboard-playground"
-        tabIndex={0}
-        onDragEnter={interactionMode === 'select' ? handleDragEnter : undefined}
-        onDragLeave={interactionMode === 'select' ? handleDragLeave : undefined}
-        onDragOver={interactionMode === 'select' ? handleDragOver : undefined}
+    <StoryboardHistoryProvider takeSnapshot={takeSnapshot}>
+      <StoryboardTextEditingProvider
+        nodes={nodes}
+        setNodes={setNodes}
+        takeSnapshot={takeSnapshot}
+        interactionMode={interactionMode}
       >
-        <StoryboardFlow
+        <FrameExtractDragProvider
+          getNodes={getNodes}
+          setNodes={setNodes}
+          takeSnapshot={takeSnapshot}
+          showIngestMessage={showIngestMessage}
+          screenToFlowPosition={screenToFlowPosition}
+          getFrameCapture={(nodeId) =>
+            frameCaptureRegistryRef.current.get(nodeId)
+          }
+        >
+          <StoryboardImageCropProvider
+            nodes={nodes}
+            setNodes={setNodes}
+            takeSnapshot={takeSnapshot}
+            interactionMode={interactionMode}
+            onCloseContextMenu={closeContextMenu}
+            showMessage={showIngestMessage}
+          >
+            <StoryboardPlaygroundCanvas
           nodes={nodes}
+          setNodes={setNodes}
           edges={edges}
           interactionMode={interactionMode}
           loadState={loadState}
           loadError={loadError}
-          statusMessage={statusMessage}
           saveState={saveState}
+          saveError={saveError}
           ingestMessage={ingestMessage}
           contextMenu={contextMenu}
           flowRef={flowRef}
+          playgroundRef={playgroundRef}
           dragActive={dragActive}
-          onNodesChange={handleNodesChange}
+          handleNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeContextMenu={onNodeContextMenu}
-          onPaneClick={closeContextMenu}
-          onCloseContextMenu={closeContextMenu}
-          onAddShot={addShot}
-          onRetryLoad={() => void hydrateBoard()}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onInteractionModeChange={handleInteractionModeChange}
-          onStrokeComplete={handleStrokeComplete}
-          fitViewReady={loadState === 'ready'}
+          closeContextMenu={closeContextMenu}
+          handleInteractionModeChange={handleInteractionModeChange}
+          handleStrokeComplete={handleStrokeComplete}
+          beginDragHistory={beginDragHistory}
+          commitDragHistory={commitDragHistory}
+          handleBeforeDelete={handleBeforeDelete}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          undo={undo}
+          redo={redo}
+          takeSnapshot={takeSnapshot}
+          startUrlImport={startUrlImport}
+          hydrateBoard={hydrateBoard}
+          handleDrop={handleDrop}
+          handleDragOver={handleDragOver}
+          handleDragEnter={handleDragEnter}
+          handleDragLeave={handleDragLeave}
+          duplicateNode={duplicateNode}
+          deleteNode={deleteNode}
+          registerFrameCapture={registerFrameCapture}
+          unregisterFrameCapture={unregisterFrameCapture}
+          canExtractFrame={canExtractFrame}
+          extractFrame={extractFrame}
+          copySelectedNodes={copySelectedNodes}
+          pasteClipboardNodes={pasteClipboardNodes}
+          persistBoardNow={persistBoardNow}
           fileInputRef={fileInputRef}
-          onFileInputChange={handleFileInputChange}
-          fitViewSlot={<FitViewWhenReady ready={loadState === 'ready'} />}
+          handleFileInputChange={handleFileInputChange}
+          screenToFlowPosition={screenToFlowPosition}
         />
-      </div>
-    </StoryboardCardActionsProvider>
+          </StoryboardImageCropProvider>
+        </FrameExtractDragProvider>
+      </StoryboardTextEditingProvider>
+    </StoryboardHistoryProvider>
   )
 }
 

@@ -13,7 +13,7 @@ type AssetRow = {
 
 type NodeRow = {
   id: string
-  kind: 'video' | 'image'
+  kind: 'video' | 'image' | 'drawing' | 'text'
   asset_id: string | null
   label: string
   position_x: number
@@ -95,11 +95,12 @@ export function saveBoard(payload: BoardPayload): BoardResponse {
     `)
 
     for (const node of payload.nodes) {
+      const label = node.label?.trim() || 'Untitled'
       insertNode.run(
         node.id,
         node.kind,
         node.assetId,
-        node.label,
+        label,
         node.positionX,
         node.positionY,
         node.width,

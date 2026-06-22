@@ -17,29 +17,28 @@ export function VideoCardLastFrameSync({
 }: VideoCardLastFrameSyncProps) {
   const nodeId = useNodeId()
   const { setNodes } = useReactFlow<MediaCardNodeType>()
-  const { isReady, currentFrame, totalFrames, seekToFrame } =
+  const { isReady, isPlaying, isScrubbing, currentFrame, totalFrames, seekToFrame } =
     useFrameflowVideoContext()
-  const hasRestoredRef = useRef(false)
+  const restoredSrcRef = useRef<string | null>(null)
 
   useEffect(() => {
-    hasRestoredRef.current = false
-  }, [lastFrame, src])
+    restoredSrcRef.current = null
+  }, [src])
 
   useEffect(() => {
-    if (!isReady || hasRestoredRef.current || lastFrame == null) {
-      if (isReady && !hasRestoredRef.current && lastFrame == null) {
-        hasRestoredRef.current = true
-      }
+    if (!isReady || !src || totalFrames == null || restoredSrcRef.current === src) {
       return
     }
 
-    const maxFrame = totalFrames != null ? totalFrames - 1 : lastFrame
-    seekToFrame(Math.min(lastFrame, maxFrame))
-    hasRestoredRef.current = true
-  }, [isReady, lastFrame, seekToFrame, totalFrames])
+    restoredSrcRef.current = src
+
+    if (lastFrame != null && lastFrame > 0) {
+      seekToFrame(Math.min(lastFrame, totalFrames - 1))
+    }
+  }, [isReady, seekToFrame, src, totalFrames])
 
   useEffect(() => {
-    if (!hasRestoredRef.current || !nodeId || currentFrame == null) {
+    if (!nodeId || currentFrame == null || isPlaying || isScrubbing) {
       return
     }
 
@@ -68,7 +67,7 @@ export function VideoCardLastFrameSync({
     return () => {
       window.clearTimeout(timer)
     }
-  }, [currentFrame, nodeId, setNodes])
+  }, [currentFrame, isPlaying, isScrubbing, nodeId, setNodes])
 
   return null
 }
