@@ -11,6 +11,12 @@ import {
   handleImportJobStream,
   handleStartImportUrl,
 } from './routes/import'
+import {
+  handleClipJobStream,
+  handleCancelClipJob,
+  handleGetClipJob,
+  handleStartClipExtract,
+} from './routes/clipExtract'
 import type { BoardPayload } from './types'
 
 getDb()
@@ -64,6 +70,25 @@ const server = Bun.serve({
     '/api/import/:jobId': {
       GET(req) {
         return handleGetImportJob(req.params.jobId)
+      },
+    },
+
+    '/api/clips/extract': {
+      POST: handleStartClipExtract,
+    },
+
+    '/api/clips/:jobId/stream': {
+      GET(req) {
+        return handleClipJobStream(req.params.jobId)
+      },
+    },
+
+    '/api/clips/:jobId': {
+      GET(req) {
+        return handleGetClipJob(req.params.jobId)
+      },
+      DELETE(req) {
+        return handleCancelClipJob(req.params.jobId)
       },
     },
 

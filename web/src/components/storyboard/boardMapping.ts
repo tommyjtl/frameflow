@@ -56,6 +56,50 @@ export function createDefaultStoryboard(): {
   return { nodes, edges }
 }
 
+export async function createDefaultStoryboardWithAssets(
+  uploadSampleVideo: (file: File) => Promise<AssetRecord>,
+  sampleVideoUrl: string = DEFAULT_SAMPLE_VIDEO,
+): Promise<{
+  nodes: MediaCardNodeType[]
+  edges: Edge[]
+}> {
+  const response = await fetch(sampleVideoUrl)
+
+  if (!response.ok) {
+    throw new Error('Could not load the sample video for a new storyboard.')
+  }
+
+  const blob = await response.blob()
+  const file = new File([blob], 'do-it-again.mp4', {
+    type: blob.type || 'video/mp4',
+  })
+  const asset = await uploadSampleVideo(file)
+
+  const nodes: MediaCardNodeType[] = [
+    createVideoNode('shot-1', { x: 0, y: STORYBOARD_NODE_Y }, {
+      label: 'Shot 1',
+      src: asset.url,
+      assetId: asset.id,
+    }),
+    createVideoNode(
+      'shot-2',
+      { x: STORYBOARD_NODE_X_GAP, y: STORYBOARD_NODE_Y },
+      { label: 'Shot 2', src: asset.url, assetId: asset.id },
+    ),
+  ]
+
+  const edges: Edge[] = [
+    {
+      id: 'shot-1-shot-2',
+      source: 'shot-1',
+      target: 'shot-2',
+      type: DEFAULT_EDGE_TYPE,
+    },
+  ]
+
+  return { nodes, edges }
+}
+
 function resolveNodeLastFrame(record: BoardNodeRecord): number | undefined {
   const lastFrame = record.meta?.lastFrame
   if (typeof lastFrame !== 'number' || !Number.isFinite(lastFrame) || lastFrame < 0) {
@@ -70,11 +114,15 @@ function resolveNodeNaturalDimensions(record: BoardNodeRecord): {
   naturalHeight?: number
   sourceFrameIndex?: number
   extractedFromNodeId?: string
+  sourceClipStartFrame?: number
+  sourceClipEndFrame?: number
 } {
   const naturalWidth = record.meta?.naturalWidth
   const naturalHeight = record.meta?.naturalHeight
   const sourceFrameIndex = record.meta?.sourceFrameIndex
   const extractedFromNodeId = record.meta?.extractedFromNodeId
+  const sourceClipStartFrame = record.meta?.sourceClipStartFrame
+  const sourceClipEndFrame = record.meta?.sourceClipEndFrame
 
   return {
     naturalWidth:
@@ -94,6 +142,18 @@ function resolveNodeNaturalDimensions(record: BoardNodeRecord): {
     extractedFromNodeId:
       typeof extractedFromNodeId === 'string' && extractedFromNodeId.length > 0
         ? extractedFromNodeId
+        : undefined,
+    sourceClipStartFrame:
+      typeof sourceClipStartFrame === 'number' &&
+      Number.isFinite(sourceClipStartFrame) &&
+      sourceClipStartFrame >= 0
+        ? Math.floor(sourceClipStartFrame)
+        : undefined,
+    sourceClipEndFrame:
+      typeof sourceClipEndFrame === 'number' &&
+      Number.isFinite(sourceClipEndFrame) &&
+      sourceClipEndFrame >= 0
+        ? Math.floor(sourceClipEndFrame)
         : undefined,
   }
 }
@@ -229,17 +289,52 @@ function resolveImportMeta(record: BoardNodeRecord): {
   }
 }
 
+function resolveClipExtractMeta(record: BoardNodeRecord): {
+  clipExtractJobId?: string
+  clipExtractStatus?: 'processing' | 'error'
+  clipExtractProgress?: number
+  clipExtractErrorMessage?: string
+} {
+  const clipExtractJobId = record.meta?.clipExtractJobId
+  const clipExtractStatus = record.meta?.clipExtractStatus
+  const clipExtractProgress = record.meta?.clipExtractProgress
+  const clipExtractErrorMessage = record.meta?.clipExtractErrorMessage
+
+  return {
+    clipExtractJobId:
+      typeof clipExtractJobId === 'string' && clipExtractJobId.length > 0
+        ? clipExtractJobId
+        : undefined,
+    clipExtractStatus:
+      clipExtractStatus === 'processing' || clipExtractStatus === 'error'
+        ? clipExtractStatus
+        : undefined,
+    clipExtractProgress:
+      typeof clipExtractProgress === 'number' &&
+      Number.isFinite(clipExtractProgress)
+        ? Math.min(100, Math.max(0, Math.round(clipExtractProgress)))
+        : undefined,
+    clipExtractErrorMessage:
+      typeof clipExtractErrorMessage === 'string' &&
+      clipExtractErrorMessage.length > 0
+        ? clipExtractErrorMessage
+        : undefined,
+  }
+}
+
 function boardNodeToFlowNode(
   record: BoardNodeRecord,
   assets: AssetRecord[],
 ): StoryboardNodeType | null {
   const position = { x: record.positionX, y: record.positionY }
   const importMeta = resolveImportMeta(record)
+  const clipExtractMeta = resolveClipExtractMeta(record)
   const baseData = {
     label: record.label,
     src: resolveNodeSrc(record, assets),
     assetId: record.assetId,
     ...importMeta,
+    ...clipExtractMeta,
   }
 
   if (record.kind === 'video') {
@@ -264,6 +359,9 @@ function boardNodeToFlowNode(
         naturalWidth: naturalMeta.naturalWidth,
         naturalHeight: naturalMeta.naturalHeight,
         lastFrame: resolveNodeLastFrame(record),
+        sourceClipStartFrame: naturalMeta.sourceClipStartFrame,
+        sourceClipEndFrame: naturalMeta.sourceClipEndFrame,
+        extractedFromNodeId: naturalMeta.extractedFromNodeId,
       },
       dimensions,
     )
@@ -391,6 +489,18 @@ function buildNodeMeta(node: StoryboardNodeType): Record<string, unknown> | null
     if (node.data.naturalHeight != null) {
       meta.naturalHeight = node.data.naturalHeight
     }
+
+    if (node.data.sourceClipStartFrame != null) {
+      meta.sourceClipStartFrame = node.data.sourceClipStartFrame
+    }
+
+    if (node.data.sourceClipEndFrame != null) {
+      meta.sourceClipEndFrame = node.data.sourceClipEndFrame
+    }
+
+    if (node.data.extractedFromNodeId) {
+      meta.extractedFromNodeId = node.data.extractedFromNodeId
+    }
   }
 
   if (node.data.kind === 'image') {
@@ -437,6 +547,22 @@ function buildNodeMeta(node: StoryboardNodeType): Record<string, unknown> | null
 
   if (node.data.importErrorMessage) {
     meta.importErrorMessage = node.data.importErrorMessage
+  }
+
+  if (node.data.clipExtractJobId) {
+    meta.clipExtractJobId = node.data.clipExtractJobId
+  }
+
+  if (node.data.clipExtractStatus) {
+    meta.clipExtractStatus = node.data.clipExtractStatus
+  }
+
+  if (node.data.clipExtractProgress != null) {
+    meta.clipExtractProgress = node.data.clipExtractProgress
+  }
+
+  if (node.data.clipExtractErrorMessage) {
+    meta.clipExtractErrorMessage = node.data.clipExtractErrorMessage
   }
 
   return Object.keys(meta).length > 0 ? meta : null

@@ -118,6 +118,15 @@
   background: rgba(0, 0, 0, 0.5);
   overflow: hidden;
   transition: height 120ms ease;
+  position: relative;
+}
+
+.frameflow-progress-bar__clip-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #a855f7;
+  pointer-events: none;
 }
 
 .frameflow-progress-bar__fill {

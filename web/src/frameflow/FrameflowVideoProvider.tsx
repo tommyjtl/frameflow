@@ -63,6 +63,8 @@ export type FrameflowVideoContextValue = {
   seekCommitToken: number
   currentFrame: number | null
   totalFrames: number | null
+  /** Probed source video frame rate, null until ready. */
+  videoFps: number | null
   dragDirection: DragDirection
   dragVelocity: number | null
   velocitySpeed: MotionSpeed | null
@@ -1064,6 +1066,7 @@ export function FrameflowVideoProvider({
       seekCommitToken,
       currentFrame,
       totalFrames,
+      videoFps: probedVideoFps,
       dragDirection,
       dragVelocity,
       velocitySpeed,
@@ -1090,6 +1093,7 @@ export function FrameflowVideoProvider({
       seekCommitToken,
       currentFrame,
       totalFrames,
+      probedVideoFps,
       dragDirection,
       dragVelocity,
       velocitySpeed,

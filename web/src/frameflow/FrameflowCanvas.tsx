@@ -18,6 +18,19 @@ export type FrameflowCanvasProps = {
   showPlaybackProgress?: boolean
   /** Fixed pixel stack (demo) or fill the parent container (storyboard cards). */
   layout?: 'fixed' | 'fill'
+  /** Optional clip extraction progress overlay (storyboard). */
+  clipProgress?: React.ComponentType<{
+    active: boolean
+    rangeStart: number | null
+    rangeEnd: number | null
+    onRangeChange: (start: number, end: number) => void
+  }> | null
+  clipProgressProps?: {
+    active: boolean
+    rangeStart: number | null
+    rangeEnd: number | null
+    onRangeChange: (start: number, end: number) => void
+  }
 }
 
 function getIsInsidePlaybackSafeZone(
@@ -42,6 +55,8 @@ export function FrameflowCanvas({
   showDragStats = false,
   showPlaybackProgress = true,
   layout = 'fixed',
+  clipProgress: ClipProgressComponent = null,
+  clipProgressProps,
 }: FrameflowCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const {
@@ -154,7 +169,12 @@ export function FrameflowCanvas({
         <canvas ref={canvasRef} />
         {isReady && (
           <>
-            {showPlaybackProgress && <FrameflowPlaybackProgress />}
+            {showPlaybackProgress &&
+              (ClipProgressComponent && clipProgressProps?.active ? (
+                <ClipProgressComponent {...clipProgressProps} />
+              ) : (
+                <FrameflowPlaybackProgress />
+              ))}
             <div
               className={[
                 'frameflow-canvas-overlay',

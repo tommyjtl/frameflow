@@ -76,6 +76,45 @@ export type ImportCompletePayload = {
   naturalHeight?: number
 }
 
+export type ClipJobSnapshot = {
+  id: string
+  sourceNodeId: string
+  outputNodeId: string
+  sourceAssetId: string
+  startFrame: number
+  endFrame: number
+  fps: number
+  label: string
+  status: 'queued' | 'processing' | 'complete' | 'error'
+  progress: number
+  assetId: string | null
+  errorMessage: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type StartClipExtractResponse = {
+  jobId: string
+}
+
+export type ClipCompletePayload = {
+  assetId: string
+  url: string
+  kind: AssetKind
+  title: string
+  naturalWidth?: number
+  naturalHeight?: number
+  sourceClipStartFrame: number
+  sourceClipEndFrame: number
+  extractedFromNodeId: string
+}
+
+export type ClipJobEventHandlers = {
+  onProgress?: (data: { percent: number }) => void
+  onComplete?: (data: ClipCompletePayload) => void
+  onError?: (data: { message: string }) => void
+}
+
 export type ImportJobEventHandlers = {
   onMetadata?: (data: { title: string | null; platform: ImportPlatform }) => void
   onProgress?: (data: { percent: number; title: string | null }) => void
@@ -208,6 +247,71 @@ export function subscribeImportJobEvents(
   )
   listen<{ percent: number; title: string | null }>('progress', handlers.onProgress)
   listen<ImportCompletePayload>('complete', handlers.onComplete)
+  listen<{ message: string }>('error', handlers.onError)
+
+  source.onerror = () => {
+    source.close()
+  }
+
+  return () => {
+    source.close()
+  }
+}
+
+export async function startClipExtract(input: {
+  sourceNodeId: string
+  outputNodeId: string
+  sourceAssetId: string
+  startFrame: number
+  endFrame: number
+  fps: number
+  label: string
+}): Promise<StartClipExtractResponse> {
+  const response = await fetch('/api/clips/extract', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+
+  return parseJson<StartClipExtractResponse>(response)
+}
+
+export async function fetchClipJob(jobId: string): Promise<ClipJobSnapshot> {
+  const response = await fetch(`/api/clips/${jobId}`)
+  return parseJson<ClipJobSnapshot>(response)
+}
+
+export async function cancelClipExtract(jobId: string): Promise<void> {
+  const response = await fetch(`/api/clips/${jobId}`, {
+    method: 'DELETE',
+  })
+
+  await parseJson<{ ok: true }>(response)
+}
+
+export function subscribeClipJobEvents(
+  jobId: string,
+  handlers: ClipJobEventHandlers,
+): () => void {
+  const source = new EventSource(`/api/clips/${jobId}/stream`)
+
+  const listen = <T>(eventName: string, handler?: (data: T) => void) => {
+    if (!handler) {
+      return
+    }
+
+    source.addEventListener(eventName, (event) => {
+      try {
+        const data = JSON.parse((event as MessageEvent).data) as T
+        handler(data)
+      } catch {
+        // ignore malformed SSE payloads
+      }
+    })
+  }
+
+  listen<{ percent: number }>('progress', handlers.onProgress)
+  listen<ClipCompletePayload>('complete', handlers.onComplete)
   listen<{ message: string }>('error', handlers.onError)
 
   source.onerror = () => {

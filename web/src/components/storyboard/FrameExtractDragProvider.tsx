@@ -218,6 +218,10 @@ export function FrameExtractDragProvider({
 
   const startCaptureForDrag = useCallback(
     async (sourceNodeId: string) => {
+      if (phaseRef.current !== 'capturing') {
+        return
+      }
+
       const registration = getFrameCapture(sourceNodeId)
 
       if (!registration?.canExtract()) {
@@ -228,8 +232,6 @@ export function FrameExtractDragProvider({
         cleanup()
         return
       }
-
-      phaseRef.current = 'capturing'
 
       try {
         const captured = await registration.capture()
@@ -356,6 +358,7 @@ export function FrameExtractDragProvider({
           return
         }
 
+        phaseRef.current = 'capturing'
         void startCaptureForDrag(sourceNodeId)
         return
       }

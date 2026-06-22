@@ -11,6 +11,10 @@ type MediaCardBaseData = {
   importProgress?: number
   importTitle?: string
   importErrorMessage?: string
+  clipExtractJobId?: string
+  clipExtractStatus?: 'processing' | 'error'
+  clipExtractProgress?: number
+  clipExtractErrorMessage?: string
 }
 
 export type VideoMediaNodeData = MediaCardBaseData & {
@@ -19,6 +23,12 @@ export type VideoMediaNodeData = MediaCardBaseData & {
   naturalHeight?: number
   /** Last scrubbed/playback frame index, persisted in board meta. */
   lastFrame?: number
+  /** Inclusive clip start frame when extracted from another video card. */
+  sourceClipStartFrame?: number
+  /** Inclusive clip end frame when extracted from another video card. */
+  sourceClipEndFrame?: number
+  /** Source video node id when extracted from a video card. */
+  extractedFromNodeId?: string
 }
 
 export type ImageMediaNodeData = MediaCardBaseData & {
@@ -332,6 +342,51 @@ export function normalizeImageNodeDimensions(
   return imageNodeFromBody(body.bodyWidth, body.bodyHeight)
 }
 
+export type ImageResizeAnchor = 'nw' | 'ne' | 'sw' | 'se'
+
+/** Which corner stays fixed, inferred from React Flow's resize position delta. */
+export function getImageResizeAnchor(
+  prev: { x: number; y: number; width: number; height: number },
+  next: { x: number; y: number; width: number; height: number },
+): ImageResizeAnchor {
+  const xFixed = next.x === prev.x
+  const yFixed = next.y === prev.y
+
+  if (xFixed && yFixed) {
+    return 'nw'
+  }
+
+  if (xFixed && !yFixed) {
+    return 'sw'
+  }
+
+  if (!xFixed && yFixed) {
+    return 'ne'
+  }
+
+  return 'se'
+}
+
+export function positionImageNodeForResizeAnchor(
+  anchor: ImageResizeAnchor,
+  prev: { x: number; y: number; width: number; height: number },
+  size: { width: number; height: number },
+): { x: number; y: number } {
+  switch (anchor) {
+    case 'nw':
+      return { x: prev.x, y: prev.y }
+    case 'sw':
+      return { x: prev.x, y: prev.y + prev.height - size.height }
+    case 'ne':
+      return { x: prev.x + prev.width - size.width, y: prev.y }
+    case 'se':
+      return {
+        x: prev.x + prev.width - size.width,
+        y: prev.y + prev.height - size.height,
+      }
+  }
+}
+
 export function getImageNodeMinDimensions(
   naturalWidth?: number,
   naturalHeight?: number,
@@ -478,6 +533,35 @@ export function createUrlImportPlaceholderNode(
       width: STORYBOARD_URL_IMPORT_VIDEO_NODE_WIDTH,
       height: STORYBOARD_URL_IMPORT_VIDEO_NODE_HEIGHT,
     },
+  )
+}
+
+export function createClipExtractPlaceholderNode(
+  id: string,
+  position: { x: number; y: number },
+  data: {
+    label: string
+    clipExtractJobId: string
+    sourceNodeId: string
+    startFrame: number
+    endFrame: number
+  },
+  dimensions?: { width?: number; height?: number },
+): MediaCardNodeType {
+  return createVideoNode(
+    id,
+    position,
+    {
+      label: data.label,
+      src: '',
+      clipExtractJobId: data.clipExtractJobId,
+      clipExtractStatus: 'processing',
+      clipExtractProgress: 0,
+      sourceClipStartFrame: data.startFrame,
+      sourceClipEndFrame: data.endFrame,
+      extractedFromNodeId: data.sourceNodeId,
+    },
+    dimensions,
   )
 }
 

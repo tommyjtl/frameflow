@@ -5,6 +5,7 @@ import { ImageCardBody } from './ImageCardBody'
 import { ImageCropEditor } from './ImageCropEditor'
 import { MediaCardShell } from './MediaCardShell'
 import { useStoryboardImageCrop } from './StoryboardImageCropContext'
+import { useStoryboardCardActions } from './StoryboardCardActionsContext'
 import { VideoCardBody } from './VideoCardBody'
 import { ImportVideoCardHeader, VideoCardHeader } from './VideoCardHeader'
 import {
@@ -26,6 +27,7 @@ function MediaCardNodeComponent({
   const nodeId = useNodeId()
   const { croppingNodeId, cropFrame, naturalWidth, naturalHeight, enterCropMode } =
     useStoryboardImageCrop()
+  const { cancelClipExtractJob, dismissClipExtractCard } = useStoryboardCardActions()
   const isCropping = nodeId != null && croppingNodeId === nodeId
 
   const handleImageDoubleClick = useCallback(
@@ -44,19 +46,42 @@ function MediaCardNodeComponent({
     },
     [data, enterCropMode, isCropping, nodeId, selected],
   )
+
+  const handleCancelClipExtract = useCallback(() => {
+    if (!nodeId) {
+      return
+    }
+
+    void cancelClipExtractJob(nodeId)
+  }, [cancelClipExtractJob, nodeId])
+
+  const handleDismissClipExtract = useCallback(() => {
+    if (!nodeId) {
+      return
+    }
+
+    dismissClipExtractCard(nodeId)
+  }, [dismissClipExtractCard, nodeId])
+
   const canvasDimensions = getCanvasDimensions(width, height)
   const resizeBounds = isImageNodeData(data)
     ? getImageNodeMinDimensions(data.naturalWidth, data.naturalHeight)
     : undefined
 
   if (isVideoNodeData(data)) {
+    const isClipExtracting =
+      data.clipExtractStatus === 'processing' ||
+      data.clipExtractStatus === 'error' ||
+      (data.clipExtractJobId != null && !data.src)
+
     const isImporting =
       data.importStatus === 'downloading' ||
       data.importStatus === 'error' ||
       !data.src
 
-    if (isImporting) {
+    if (isImporting || isClipExtracting) {
       const isImportError = data.importStatus === 'error'
+      const isClipError = data.clipExtractStatus === 'error'
 
       return (
         <MediaCardShell
@@ -67,19 +92,46 @@ function MediaCardNodeComponent({
             <ImportVideoCardHeader
               label={data.label}
               platform={data.platform}
-              importStatus={isImportError ? 'error' : 'downloading'}
+              importStatus={
+                isClipExtracting
+                  ? isClipError
+                    ? 'error'
+                    : 'downloading'
+                  : isImportError
+                    ? 'error'
+                    : 'downloading'
+              }
               importProgress={data.importProgress}
               importTitle={data.importTitle}
+              clipExtractStatus={
+                isClipExtracting
+                  ? isClipError
+                    ? 'error'
+                    : 'processing'
+                  : undefined
+              }
+              clipExtractProgress={data.clipExtractProgress}
+              onCancelClipExtract={
+                data.clipExtractStatus === 'processing'
+                  ? handleCancelClipExtract
+                  : undefined
+              }
+              onDismissClipExtract={isClipError ? handleDismissClipExtract : undefined}
             />
           }
           keepAspectRatio
           bodyClassName="media-card__body--video nodrag nopan"
         >
           <VideoCardBody
-            importing={!isImportError}
+            importing={!isImportError && !isClipError}
             importErrorMessage={
-              isImportError ? data.importErrorMessage : undefined
+              isClipError
+                ? data.clipExtractErrorMessage
+                : isImportError
+                  ? data.importErrorMessage
+                  : undefined
             }
+            errorTitle={isClipError ? 'Clip extraction failed' : 'Import failed'}
             width={canvasDimensions.width}
             height={canvasDimensions.height}
           />
@@ -102,6 +154,8 @@ function MediaCardNodeComponent({
               label={data.label}
               platform={data.platform}
               sourceUrl={data.sourceUrl}
+              src={data.src}
+              assetId={data.assetId}
             />
           }
           keepAspectRatio

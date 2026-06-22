@@ -123,16 +123,52 @@
   cursor: pointer;
 }
 
-.media-card__header-btn:hover:not(:disabled),
-.media-card__header-btn:focus-visible:not(:disabled) {
+.media-card__header-btn:hover:not(:disabled):not([aria-disabled='true']),
+.media-card__header-btn:focus-visible:not(:disabled):not([aria-disabled='true']) {
   background: var(--accent-bg);
   color: #fff;
   outline: none;
 }
 
-.media-card__header-btn:disabled {
+.media-card__header-btn:disabled,
+.media-card__header-btn[aria-disabled='true'] {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.media-card__header-btn--clip-active:not(.media-card__header-btn--clip-ready) {
+  color: #c084fc;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  pointer-events: none;
+}
+
+.media-card__header-btn--clip-cancel:hover:not(:disabled),
+.media-card__header-btn--clip-cancel:focus-visible:not(:disabled) {
+  background: rgba(220, 38, 38, 0.15);
+  color: #f87171;
+}
+
+.media-card__header-btn--clip-ready {
+  background: #a855f7;
+  color: #fff;
+}
+
+.media-card__header-btn--clip-ready:hover:not(:disabled),
+.media-card__header-btn--clip-ready:focus-visible:not(:disabled) {
+  background: #9333ea;
+  color: #fff;
+}
+
+.frameflow-progress-hit--clip-mode {
+  cursor: pointer;
+}
+
+.frameflow-progress-hit--resize {
+  cursor: ew-resize;
 }
 
 .media-card__header:active {

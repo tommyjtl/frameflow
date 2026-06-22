@@ -77,3 +77,38 @@ export type ImportCompletePayload = {
   naturalWidth?: number
   naturalHeight?: number
 }
+
+export type ClipJobStatus = 'queued' | 'processing' | 'complete' | 'error'
+
+export type ClipJobRecord = {
+  id: string
+  sourceNodeId: string
+  outputNodeId: string
+  sourceAssetId: string
+  startFrame: number
+  endFrame: number
+  fps: number
+  label: string
+  status: ClipJobStatus
+  progress: number
+  assetId: string | null
+  errorMessage: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type StartClipExtractResponse = {
+  jobId: string
+}
+
+export type ClipCompletePayload = {
+  assetId: string
+  url: string
+  kind: AssetKind
+  title: string
+  naturalWidth?: number
+  naturalHeight?: number
+  sourceClipStartFrame: number
+  sourceClipEndFrame: number
+  extractedFromNodeId: string
+}

@@ -8,12 +8,14 @@ type UseStoryboardHotkeysOptions = {
   contextMenuOpen: boolean
   editingTextNodeId: string | null
   croppingNodeId: string | null
+  clipExtractActive: boolean
   hasSelectedTextNode: boolean
   selectedTextNodeId: string | null
   onInteractionModeChange: (mode: BoardInteractionMode) => void
   onCloseContextMenu: () => void
   onExitTextEditing: () => void
   onCancelCrop: () => void
+  onCancelClipExtract: () => void
   onApplyCrop: () => void
   onDeselectAllNodes: () => void
   onSelectAllNodes: () => void
@@ -33,12 +35,14 @@ export function useStoryboardHotkeys({
   contextMenuOpen,
   editingTextNodeId,
   croppingNodeId,
+  clipExtractActive,
   hasSelectedTextNode,
   selectedTextNodeId,
   onInteractionModeChange,
   onCloseContextMenu,
   onExitTextEditing,
   onCancelCrop,
+  onCancelClipExtract,
   onApplyCrop,
   onDeselectAllNodes,
   onSelectAllNodes,
@@ -56,6 +60,11 @@ export function useStoryboardHotkeys({
 
       if (contextMenuOpen) {
         onCloseContextMenu()
+        return
+      }
+
+      if (clipExtractActive) {
+        onCancelClipExtract()
         return
       }
 
@@ -83,6 +92,7 @@ export function useStoryboardHotkeys({
       enabled:
         enabled &&
         (contextMenuOpen ||
+          clipExtractActive ||
           croppingNodeId != null ||
           editingTextNodeId != null ||
           hasSelectedTextNode ||
@@ -90,12 +100,14 @@ export function useStoryboardHotkeys({
           interactionMode === 'text'),
     },
     [
+      clipExtractActive,
       contextMenuOpen,
       croppingNodeId,
       editingTextNodeId,
       enabled,
       hasSelectedTextNode,
       interactionMode,
+      onCancelClipExtract,
       onCancelCrop,
       onCloseContextMenu,
       onDeselectAllNodes,

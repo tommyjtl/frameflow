@@ -1,10 +1,12 @@
+import { Camera, Check, ExternalLink, Pause, Play, Scissors, X } from 'lucide-react'
 import { type MouseEvent, type PointerEvent } from 'react'
 import { useNodeId } from '@xyflow/react'
-import { Camera, ExternalLink, Pause, Play } from 'lucide-react'
 import { useFrameflowVideoContext } from '../../frameflow'
 import { PlatformIcon } from './PlatformIcon'
 import { useMediaCardRename } from './useMediaCardRename'
 import { useFrameExtractDrag } from './FrameExtractDragProvider'
+import { useClipExtractModeOptional } from './ClipExtractProvider'
+import { canExtractClipFromVideo } from './clipExtractPlacement'
 
 type ImportVideoCardHeaderProps = {
   label: string
@@ -12,6 +14,10 @@ type ImportVideoCardHeaderProps = {
   importStatus?: 'downloading' | 'error'
   importProgress?: number
   importTitle?: string
+  clipExtractStatus?: 'processing' | 'error'
+  clipExtractProgress?: number
+  onCancelClipExtract?: () => void
+  onDismissClipExtract?: () => void
 }
 
 export function ImportVideoCardHeader({
@@ -20,9 +26,15 @@ export function ImportVideoCardHeader({
   importStatus = 'downloading',
   importProgress,
   importTitle,
+  clipExtractStatus,
+  clipExtractProgress,
+  onCancelClipExtract,
+  onDismissClipExtract,
 }: ImportVideoCardHeaderProps) {
   const displayLabel = importTitle ?? label
   const isImportError = importStatus === 'error'
+  const isClipError = clipExtractStatus === 'error'
+  const isClipProcessing = clipExtractStatus === 'processing'
 
   return (
     <header className="media-card__header dragHandle">
@@ -33,12 +45,54 @@ export function ImportVideoCardHeader({
           </span>
         ) : null}
         <span className="media-card__label">
-          {isImportError ? (importTitle ?? label) : displayLabel}
+          {isImportError || isClipError ? label : displayLabel}
         </span>
       </div>
 
       <div className="media-card__header-actions nodrag nopan">
-        {isImportError ? (
+        {isClipProcessing ? (
+          <>
+            <span className="media-card__import-progress">
+              Extracting clip {Math.round(clipExtractProgress ?? 0)}%
+            </span>
+            {onCancelClipExtract ? (
+              <button
+                type="button"
+                className="media-card__header-btn media-card__header-btn--clip-cancel"
+                title="Cancel clip extraction"
+                aria-label="Cancel clip extraction"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onCancelClipExtract()
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <X size={15} strokeWidth={2} aria-hidden />
+              </button>
+            ) : null}
+          </>
+        ) : isClipError ? (
+          <>
+            <span className="media-card__import-progress media-card__import-progress--error">
+              Failed
+            </span>
+            {onDismissClipExtract ? (
+              <button
+                type="button"
+                className="media-card__header-btn media-card__header-btn--clip-cancel"
+                title="Dismiss failed clip card"
+                aria-label="Dismiss failed clip card"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onDismissClipExtract()
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <X size={15} strokeWidth={2} aria-hidden />
+              </button>
+            ) : null}
+          </>
+        ) : isImportError ? (
           <span className="media-card__import-progress media-card__import-progress--error">
             Failed
           </span>
@@ -56,16 +110,21 @@ type VideoCardHeaderProps = {
   label: string
   platform?: 'youtube' | 'instagram'
   sourceUrl?: string
+  src: string
+  assetId?: string | null
 }
 
 export function VideoCardHeader({
   label,
   platform,
   sourceUrl,
+  src,
+  assetId,
 }: VideoCardHeaderProps) {
   const nodeId = useNodeId()
-  const { isPlaying, isReady, currentFrame } = useFrameflowVideoContext()
+  const { isPlaying, isReady, currentFrame, videoFps } = useFrameflowVideoContext()
   const { beginFrameExtractFromButton } = useFrameExtractDrag()
+  const clipMode = useClipExtractModeOptional()
   const showPlatformIcon = Boolean(platform && sourceUrl)
   const {
     isEditing,
@@ -77,8 +136,17 @@ export function VideoCardHeader({
     handleInputKeyDown,
   } = useMediaCardRename(label)
 
-  const canExtract =
-    isReady && !isPlaying && currentFrame !== null && nodeId != null
+  const canExtractFrame =
+    isReady &&
+    !isPlaying &&
+    currentFrame !== null &&
+    nodeId != null
+
+  const canExtractClip =
+    canExtractFrame && canExtractClipFromVideo({ assetId, src })
+
+  const clipModeActive = nodeId != null && (clipMode?.isClipModeActive(nodeId) ?? false)
+  const canCommitClip = nodeId != null && (clipMode?.canCommitClip(nodeId) ?? false)
 
   const canOpenSource = Boolean(sourceUrl)
   const openSourceLabel =
@@ -96,11 +164,38 @@ export function VideoCardHeader({
   const handleExtractPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     event.stopPropagation()
 
-    if (!nodeId || !canExtract) {
+    if (!nodeId || !canExtractFrame || clipModeActive) {
       return
     }
 
     beginFrameExtractFromButton(nodeId, event.currentTarget, event)
+  }
+
+  const handleClipEnterClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+
+    if (!nodeId || !canExtractClip || !clipMode || clipModeActive) {
+      return
+    }
+
+    if (currentFrame != null) {
+      clipMode.enterClipMode(nodeId, currentFrame)
+    }
+  }
+
+  const handleClipCancelClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    clipMode?.exitClipMode()
+  }
+
+  const handleClipCommitClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+
+    if (!nodeId || !canCommitClip || !clipMode || videoFps == null) {
+      return
+    }
+
+    void clipMode.commitClipExtract(nodeId, videoFps)
   }
 
   const handleOpenSourceClick = (event: MouseEvent<HTMLButtonElement>) => {
@@ -166,14 +261,66 @@ export function VideoCardHeader({
             <ExternalLink size={15} strokeWidth={2} aria-hidden />
           </button>
         ) : null}
+        {clipModeActive ? (
+          <>
+            <button
+              type="button"
+              className="media-card__header-btn media-card__header-btn--clip-cancel"
+              title="Cancel clip extraction"
+              aria-label="Cancel clip extraction"
+              onClick={handleClipCancelClick}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <X size={15} strokeWidth={2} aria-hidden />
+            </button>
+            {canCommitClip ? (
+              <button
+                type="button"
+                className="media-card__header-btn media-card__header-btn--clip-ready"
+                title="Extract clip"
+                aria-label="Extract clip"
+                onClick={handleClipCommitClick}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <Check size={15} strokeWidth={2.5} aria-hidden />
+              </button>
+            ) : (
+              <span
+                className="media-card__header-btn media-card__header-btn--clip-active"
+                title="Scrub to set clip end"
+                aria-label="Clip mode active"
+              >
+                <Scissors size={15} strokeWidth={2} aria-hidden />
+              </span>
+            )}
+          </>
+        ) : (
+          <button
+            type="button"
+            className="media-card__header-btn"
+            disabled={!canExtractClip}
+            title={
+              canExtractClip
+                ? 'Extract clip from video'
+                : 'Import or upload the video to extract clips'
+            }
+            aria-label="Extract clip from video"
+            onClick={handleClipEnterClick}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <Scissors size={15} strokeWidth={2} aria-hidden />
+          </button>
+        )}
         <button
           type="button"
           className="media-card__header-btn"
-          disabled={!canExtract}
+          aria-disabled={!canExtractFrame || clipModeActive}
           title={
-            canExtract
+            canExtractFrame && !clipModeActive
               ? 'Extract frame'
-              : 'Pause on a frame to extract'
+              : clipModeActive
+                ? 'Exit clip mode to extract a frame'
+                : 'Pause on a frame to extract'
           }
           aria-label="Extract frame"
           onPointerDown={handleExtractPointerDown}

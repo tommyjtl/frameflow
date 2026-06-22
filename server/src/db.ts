@@ -8,7 +8,7 @@ let db: Database | null = null
 // helpers (getUserVersion, migrate, rebuildNodesTable, nodesKindSupportsText).
 // After the first public release, treat schema as fixed: keep SCHEMA DDL only,
 // bump breaking changes via export/import or a explicit major-version migration.
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS assets (
@@ -56,6 +56,25 @@ CREATE TABLE IF NOT EXISTS import_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_nodes_asset_id ON nodes(asset_id);
 CREATE INDEX IF NOT EXISTS idx_import_jobs_node_id ON import_jobs(node_id);
+
+CREATE TABLE IF NOT EXISTS clip_jobs (
+  id TEXT PRIMARY KEY,
+  source_node_id TEXT NOT NULL,
+  output_node_id TEXT NOT NULL,
+  source_asset_id TEXT NOT NULL REFERENCES assets(id),
+  start_frame INTEGER NOT NULL,
+  end_frame INTEGER NOT NULL,
+  fps REAL NOT NULL,
+  label TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'complete', 'error')),
+  progress REAL NOT NULL DEFAULT 0,
+  asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+  error_message TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_clip_jobs_output_node_id ON clip_jobs(output_node_id);
 `
 
 function getUserVersion(dbInstance: Database): number {
@@ -132,6 +151,30 @@ function migrate(dbInstance: Database): void {
   if (!nodesKindSupportsText(dbInstance)) {
     rebuildNodesTable(dbInstance, "'video', 'image', 'drawing', 'text'")
   }
+
+  // clip_jobs was added after user_version 5 shipped; repair older DBs that
+  // bumped version without creating the table.
+  dbInstance.run(`
+    CREATE TABLE IF NOT EXISTS clip_jobs (
+      id TEXT PRIMARY KEY,
+      source_node_id TEXT NOT NULL,
+      output_node_id TEXT NOT NULL,
+      source_asset_id TEXT NOT NULL REFERENCES assets(id),
+      start_frame INTEGER NOT NULL,
+      end_frame INTEGER NOT NULL,
+      fps REAL NOT NULL,
+      label TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'complete', 'error')),
+      progress REAL NOT NULL DEFAULT 0,
+      asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+  dbInstance.run(
+    'CREATE INDEX IF NOT EXISTS idx_clip_jobs_output_node_id ON clip_jobs(output_node_id)',
+  )
 
   if (version < SCHEMA_VERSION) {
     dbInstance.run(`PRAGMA user_version = ${SCHEMA_VERSION}`)

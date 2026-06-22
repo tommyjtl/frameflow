@@ -19,6 +19,8 @@ type StoryboardCardActionsContextValue = {
   canExtractFrame: (nodeId: string) => boolean
   extractFrame: (nodeId: string) => Promise<void>
   enterCropMode: (nodeId: string) => void
+  cancelClipExtractJob: (outputNodeId: string) => Promise<void>
+  dismissClipExtractCard: (outputNodeId: string) => void
 }
 
 const StoryboardCardActionsContext =
@@ -32,6 +34,8 @@ type StoryboardCardActionsProviderProps = {
   canExtractFrame: (nodeId: string) => boolean
   extractFrame: (nodeId: string) => Promise<void>
   enterCropMode: (nodeId: string) => void
+  cancelClipExtractJob: (outputNodeId: string) => Promise<void>
+  dismissClipExtractCard: (outputNodeId: string) => void
   children: ReactNode
 }
 
@@ -43,6 +47,8 @@ export function StoryboardCardActionsProvider({
   canExtractFrame,
   extractFrame,
   enterCropMode,
+  cancelClipExtractJob,
+  dismissClipExtractCard,
   children,
 }: StoryboardCardActionsProviderProps) {
   const [pendingRenameNodeId, setPendingRenameNodeId] = useState<string | null>(
@@ -69,6 +75,8 @@ export function StoryboardCardActionsProvider({
       canExtractFrame,
       extractFrame,
       enterCropMode,
+      cancelClipExtractJob,
+      dismissClipExtractCard,
     }),
     [
       pendingRenameNodeId,
@@ -81,6 +89,8 @@ export function StoryboardCardActionsProvider({
       canExtractFrame,
       extractFrame,
       enterCropMode,
+      cancelClipExtractJob,
+      dismissClipExtractCard,
     ],
   )
 

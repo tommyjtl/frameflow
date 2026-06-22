@@ -20,7 +20,7 @@ import {
 } from './StoryboardImageCropContext'
 import {
   boardToFlow,
-  createDefaultStoryboard,
+  createDefaultStoryboardWithAssets,
   flowToBoardPayload,
 } from './boardMapping'
 import {
@@ -30,16 +30,27 @@ import {
 } from './storyboardClipboard'
 import { StoryboardFlow, isMediaCardContextMenuTarget } from './StoryboardFlow'
 import { FrameExtractDragProvider } from './FrameExtractDragProvider'
+import { ClipExtractProvider, useClipExtractModeOptional } from './ClipExtractProvider'
 import {
   extractFrameToPosition,
   getDefaultExtractFramePosition,
   getExtractFrameErrorMessage,
 } from './frameExtractPlacement'
 import { type StoryboardContextMenuState } from './StoryboardContextMenu'
-import { deleteAsset, fetchBoard, saveBoard, StoryboardApiError } from './storyboardApi'
+import {
+  deleteAsset,
+  fetchBoard,
+  saveBoard,
+  StoryboardApiError,
+  uploadAsset,
+} from './storyboardApi'
 import type { FrameCaptureRegistration } from './storyboardFrameCapture'
 import { useStoryboardIngest } from './useStoryboardIngest'
 import { useUrlImport } from './useUrlImport'
+import {
+  repairStaleClipExtractNodes,
+  useClipExtract,
+} from './useClipExtract'
 import { useStoryboardHotkeys } from './useStoryboardHotkeys'
 import { useStoryboardUndoRedo } from './useStoryboardUndoRedo'
 import {
@@ -50,6 +61,8 @@ import {
   isTextNoteNode,
   isVideoNodeData,
   normalizeImageNodeDimensions,
+  getImageResizeAnchor,
+  positionImageNodeForResizeAnchor,
   createTextNoteNode,
   type BoardInteractionMode,
   type FreehandDrawNodeType,
@@ -123,6 +136,8 @@ type StoryboardPlaygroundCanvasProps = {
   unregisterFrameCapture: (nodeId: string) => void
   canExtractFrame: (nodeId: string) => boolean
   extractFrame: (nodeId: string) => Promise<void>
+  cancelClipExtractJob: (outputNodeId: string) => Promise<void>
+  dismissClipExtractCard: (outputNodeId: string) => void
   copySelectedNodes: () => boolean
   pasteClipboardNodes: () => boolean
   persistBoardNow: () => Promise<void>
@@ -172,6 +187,8 @@ function StoryboardPlaygroundCanvas({
   unregisterFrameCapture,
   canExtractFrame,
   extractFrame,
+  cancelClipExtractJob,
+  dismissClipExtractCard,
   copySelectedNodes,
   pasteClipboardNodes,
   persistBoardNow,
@@ -183,6 +200,7 @@ function StoryboardPlaygroundCanvas({
     useStoryboardTextEditing()
   const { croppingNodeId, enterCropMode, cancelCrop, applyCrop } =
     useStoryboardImageCrop()
+  const clipMode = useClipExtractModeOptional()
 
   const createTextAtFlowPosition = useCallback(
     (position: { x: number; y: number }) => {
@@ -312,11 +330,13 @@ function StoryboardPlaygroundCanvas({
     contextMenuOpen: contextMenu !== null,
     editingTextNodeId,
     croppingNodeId,
+    clipExtractActive: clipMode?.activeNodeId != null,
     hasSelectedTextNode,
     onInteractionModeChange: handleInteractionModeChange,
     onCloseContextMenu: closeContextMenu,
     onExitTextEditing: exitTextEditing,
     onCancelCrop: cancelCrop,
+    onCancelClipExtract: () => clipMode?.exitClipMode(),
     onApplyCrop: applyCrop,
     onDeselectAllNodes: deselectAllNodes,
     onSelectAllNodes: selectAllNodes,
@@ -348,6 +368,8 @@ function StoryboardPlaygroundCanvas({
       canExtractFrame={canExtractFrame}
       extractFrame={extractFrame}
       enterCropMode={enterCropMode}
+      cancelClipExtractJob={cancelClipExtractJob}
+      dismissClipExtractCard={dismissClipExtractCard}
     >
       <div
         ref={playgroundRef}
@@ -474,13 +496,28 @@ function StoryboardPlaygroundInner() {
 
       historyNodesChange(changes)
 
-      const normalizedChanges = changes.map((change) => {
+      const positionChangeById = new Map<
+        string,
+        Extract<NodeChange<StoryboardNodeType>, { type: 'position' }>
+      >()
+
+      for (const change of changes) {
+        if (change.type === 'position' && change.position) {
+          positionChangeById.set(change.id, change)
+        }
+      }
+
+      const correctedPositions = new Map<string, { x: number; y: number }>()
+      const normalizedChanges: NodeChange<StoryboardNodeType>[] = []
+
+      for (const change of changes) {
         if (
           change.type !== 'dimensions' ||
           change.dimensions?.width == null ||
           change.dimensions.height == null
         ) {
-          return change
+          normalizedChanges.push(change)
+          continue
         }
 
         const node = getNodes().find((item) => item.id === change.id)
@@ -493,25 +530,91 @@ function StoryboardPlaygroundInner() {
           !node.data.naturalWidth ||
           !node.data.naturalHeight
         ) {
-          return change
+          normalizedChanges.push(change)
+          continue
         }
 
+        const prevWidth = node.width ?? 0
+        const prevHeight = node.height ?? 0
+        const prevBox = {
+          x: node.position.x,
+          y: node.position.y,
+          width: prevWidth,
+          height: prevHeight,
+        }
+        const positionChange = positionChangeById.get(change.id)
+        const rfX = positionChange?.position?.x ?? prevBox.x
+        const rfY = positionChange?.position?.y ?? prevBox.y
+        const rfWidth = change.dimensions.width
+        const rfHeight = change.dimensions.height
+
         const normalized = normalizeImageNodeDimensions(
-          change.dimensions.width,
-          change.dimensions.height,
+          rfWidth,
+          rfHeight,
           node.data.naturalWidth,
           node.data.naturalHeight,
         )
+        const anchor = getImageResizeAnchor(prevBox, {
+          x: rfX,
+          y: rfY,
+          width: rfWidth,
+          height: rfHeight,
+        })
+        const correctedPosition = positionImageNodeForResizeAnchor(
+          anchor,
+          prevBox,
+          normalized,
+        )
 
-        return {
+        correctedPositions.set(change.id, correctedPosition)
+        normalizedChanges.push({
           ...change,
           dimensions: {
             ...change.dimensions,
             width: normalized.width,
             height: normalized.height,
           },
+        })
+      }
+
+      for (const change of normalizedChanges) {
+        if (change.type !== 'position' || !change.position) {
+          continue
         }
-      })
+
+        const correctedPosition = correctedPositions.get(change.id)
+
+        if (!correctedPosition) {
+          continue
+        }
+
+        change.position = correctedPosition
+      }
+
+      for (const [nodeId, correctedPosition] of correctedPositions) {
+        if (positionChangeById.has(nodeId)) {
+          continue
+        }
+
+        const node = getNodes().find((item) => item.id === nodeId)
+
+        if (!node) {
+          continue
+        }
+
+        if (
+          correctedPosition.x === node.position.x &&
+          correctedPosition.y === node.position.y
+        ) {
+          continue
+        }
+
+        normalizedChanges.push({
+          id: nodeId,
+          type: 'position',
+          position: correctedPosition,
+        })
+      }
 
       onNodesChange(normalizedChanges)
     },
@@ -557,6 +660,42 @@ function StoryboardPlaygroundInner() {
     takeSnapshot,
   })
 
+  const { resumePendingJobs: resumePendingClipJobs, startClipExtractJob, cancelClipExtractJob, dismissClipExtractCard } =
+    useClipExtract({
+      enabled: loadState === 'ready',
+      getNodes,
+      setNodes,
+      onMessage: showIngestMessage,
+      takeSnapshot,
+    })
+
+  const handleStartClipExtractJob = useCallback(
+    async (input: {
+      sourceNodeId: string
+      startFrame: number
+      endFrame: number
+      fps: number
+    }) => {
+      const source = getNodes().find((node) => node.id === input.sourceNodeId)
+
+      if (
+        !source ||
+        source.type !== MEDIA_CARD_NODE_TYPE ||
+        !isVideoNodeData(source.data)
+      ) {
+        throw new Error('Source video card is no longer available.')
+      }
+
+      await startClipExtractJob({
+        source,
+        startFrame: input.startFrame,
+        endFrame: input.endFrame,
+        fps: input.fps,
+      })
+    },
+    [getNodes, startClipExtractJob],
+  )
+
   const hydrateBoard = useCallback(async () => {
     setLoadState('loading')
     setLoadError(null)
@@ -566,15 +705,17 @@ function StoryboardPlaygroundInner() {
       const board = await fetchBoard()
 
       if (board.nodes.length === 0) {
-        const seeded = createDefaultStoryboard()
+        const seeded = await createDefaultStoryboardWithAssets(uploadAsset)
         setNodes(seeded.nodes)
         setEdges(seeded.edges)
         await saveBoard(flowToBoardPayload(seeded.nodes, seeded.edges))
       } else {
         const flow = boardToFlow(board)
-        setNodes(flow.nodes)
+        const repairedNodes = repairStaleClipExtractNodes(flow.nodes)
+        setNodes(repairedNodes)
         setEdges(flow.edges)
-        reconnectUrlImports(flow.nodes)
+        reconnectUrlImports(repairedNodes)
+        resumePendingClipJobs(repairedNodes)
       }
 
       isHydratedRef.current = true
@@ -590,7 +731,7 @@ function StoryboardPlaygroundInner() {
           : 'Could not load the storyboard.',
       )
     }
-  }, [setEdges, setNodes, reconnectUrlImports, resetHistory])
+  }, [setEdges, setNodes, reconnectUrlImports, resumePendingClipJobs, resetHistory])
 
   useEffect(() => {
     void hydrateBoard()
@@ -985,6 +1126,10 @@ function StoryboardPlaygroundInner() {
             frameCaptureRegistryRef.current.get(nodeId)
           }
         >
+          <ClipExtractProvider
+            startClipExtractJob={handleStartClipExtractJob}
+            onMessage={showIngestMessage}
+          >
           <StoryboardImageCropProvider
             nodes={nodes}
             setNodes={setNodes}
@@ -1034,6 +1179,8 @@ function StoryboardPlaygroundInner() {
           unregisterFrameCapture={unregisterFrameCapture}
           canExtractFrame={canExtractFrame}
           extractFrame={extractFrame}
+          cancelClipExtractJob={cancelClipExtractJob}
+          dismissClipExtractCard={dismissClipExtractCard}
           copySelectedNodes={copySelectedNodes}
           pasteClipboardNodes={pasteClipboardNodes}
           persistBoardNow={persistBoardNow}
@@ -1042,6 +1189,7 @@ function StoryboardPlaygroundInner() {
           screenToFlowPosition={screenToFlowPosition}
         />
           </StoryboardImageCropProvider>
+          </ClipExtractProvider>
         </FrameExtractDragProvider>
       </StoryboardTextEditingProvider>
     </StoryboardHistoryProvider>
