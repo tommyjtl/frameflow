@@ -144,6 +144,7 @@ function MediaCardNodeComponent({
         key={data.assetId ?? data.src}
         src={data.src}
         playbackClickInset={STORYBOARD_PLAYBACK_CLICK_INSET}
+        loopPlayback={data.loopPlayback ?? false}
       >
         <MediaCardShell
           label={data.label}
@@ -156,6 +157,7 @@ function MediaCardNodeComponent({
               sourceUrl={data.sourceUrl}
               src={data.src}
               assetId={data.assetId}
+              loopPlayback={data.loopPlayback}
             />
           }
           keepAspectRatio

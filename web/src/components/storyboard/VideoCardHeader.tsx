@@ -1,12 +1,13 @@
-import { Camera, Check, ExternalLink, Pause, Play, Scissors, X } from 'lucide-react'
+import { Camera, Check, ExternalLink, Pause, Play, Repeat, Scissors, X } from 'lucide-react'
 import { type MouseEvent, type PointerEvent } from 'react'
-import { useNodeId } from '@xyflow/react'
+import { useNodeId, useReactFlow } from '@xyflow/react'
 import { useFrameflowVideoContext } from '../../frameflow'
 import { PlatformIcon } from './PlatformIcon'
 import { useMediaCardRename } from './useMediaCardRename'
 import { useFrameExtractDrag } from './FrameExtractDragProvider'
 import { useClipExtractModeOptional } from './ClipExtractProvider'
 import { canExtractClipFromVideo } from './clipExtractPlacement'
+import type { MediaCardNodeType } from './storyboardTypes'
 
 type ImportVideoCardHeaderProps = {
   label: string
@@ -112,6 +113,7 @@ type VideoCardHeaderProps = {
   sourceUrl?: string
   src: string
   assetId?: string | null
+  loopPlayback?: boolean
 }
 
 export function VideoCardHeader({
@@ -120,8 +122,10 @@ export function VideoCardHeader({
   sourceUrl,
   src,
   assetId,
+  loopPlayback = false,
 }: VideoCardHeaderProps) {
   const nodeId = useNodeId()
+  const { setNodes } = useReactFlow<MediaCardNodeType>()
   const { isPlaying, isReady, currentFrame, videoFps } = useFrameflowVideoContext()
   const { beginFrameExtractFromButton } = useFrameExtractDrag()
   const clipMode = useClipExtractModeOptional()
@@ -208,6 +212,32 @@ export function VideoCardHeader({
     window.open(sourceUrl, '_blank', 'noopener,noreferrer')
   }
 
+  const handleLoopToggleClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+
+    if (!nodeId || !isReady) {
+      return
+    }
+
+    const nextLoopPlayback = !loopPlayback
+
+    setNodes((nodes) =>
+      nodes.map((node) => {
+        if (node.id !== nodeId || node.type !== 'mediaCard' || node.data.kind !== 'video') {
+          return node
+        }
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            loopPlayback: nextLoopPlayback,
+          },
+        }
+      }),
+    )
+  }
+
   return (
     <header
       className="media-card__header dragHandle"
@@ -261,6 +291,27 @@ export function VideoCardHeader({
             <ExternalLink size={15} strokeWidth={2} aria-hidden />
           </button>
         ) : null}
+        <button
+          type="button"
+          className={[
+            'media-card__header-btn',
+            loopPlayback ? 'media-card__header-btn--loop-active' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          disabled={!isReady}
+          title={
+            loopPlayback
+              ? 'Loop playback on (plays start to end repeatedly)'
+              : 'Loop playback off'
+          }
+          aria-label={loopPlayback ? 'Disable loop playback' : 'Enable loop playback'}
+          aria-pressed={loopPlayback}
+          onClick={handleLoopToggleClick}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <Repeat size={15} strokeWidth={2} aria-hidden />
+        </button>
         {clipModeActive ? (
           <>
             <button

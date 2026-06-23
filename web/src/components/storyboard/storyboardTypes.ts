@@ -23,6 +23,8 @@ export type VideoMediaNodeData = MediaCardBaseData & {
   naturalHeight?: number
   /** Last scrubbed/playback frame index, persisted in board meta. */
   lastFrame?: number
+  /** When true, playback restarts from the first frame after reaching the end. */
+  loopPlayback?: boolean
   /** Inclusive clip start frame when extracted from another video card. */
   sourceClipStartFrame?: number
   /** Inclusive clip end frame when extracted from another video card. */

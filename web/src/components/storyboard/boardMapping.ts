@@ -109,6 +109,10 @@ function resolveNodeLastFrame(record: BoardNodeRecord): number | undefined {
   return Math.floor(lastFrame)
 }
 
+function resolveLoopPlayback(record: BoardNodeRecord): boolean {
+  return record.meta?.loopPlayback === true
+}
+
 function resolveNodeNaturalDimensions(record: BoardNodeRecord): {
   naturalWidth?: number
   naturalHeight?: number
@@ -359,6 +363,7 @@ function boardNodeToFlowNode(
         naturalWidth: naturalMeta.naturalWidth,
         naturalHeight: naturalMeta.naturalHeight,
         lastFrame: resolveNodeLastFrame(record),
+        loopPlayback: resolveLoopPlayback(record),
         sourceClipStartFrame: naturalMeta.sourceClipStartFrame,
         sourceClipEndFrame: naturalMeta.sourceClipEndFrame,
         extractedFromNodeId: naturalMeta.extractedFromNodeId,
@@ -479,6 +484,10 @@ function buildNodeMeta(node: StoryboardNodeType): Record<string, unknown> | null
 
   if (isVideoNodeData(node.data) && node.data.lastFrame != null) {
     meta.lastFrame = node.data.lastFrame
+  }
+
+  if (isVideoNodeData(node.data) && node.data.loopPlayback) {
+    meta.loopPlayback = true
   }
 
   if (isVideoNodeData(node.data)) {

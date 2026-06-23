@@ -97,6 +97,8 @@ type FrameflowVideoProviderProps = {
   onDebugSnapshot?: (snapshot: FrameflowDebugSnapshot) => void
   /** When set, play/pause clicks must start and end inside this inset. */
   playbackClickInset?: PlaybackClickInset
+  /** Restart from the first frame when playback reaches the end. */
+  loopPlayback?: boolean
 }
 
 type PointerOrigin = {
@@ -111,6 +113,7 @@ export function FrameflowVideoProvider({
   children,
   onDebugSnapshot,
   playbackClickInset,
+  loopPlayback = false,
 }: FrameflowVideoProviderProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -144,6 +147,9 @@ export function FrameflowVideoProvider({
   const fpsProbeStartTimeRef = useRef(0)
   const userOverrodeProbePlaybackRef = useRef(false)
   const frameLoopStartedRef = useRef(false)
+  const loopPlaybackRef = useRef(loopPlayback)
+
+  loopPlaybackRef.current = loopPlayback
 
   const [src, setSrcState] = useState(srcProp)
   const [fps, setFps] = useState('0')
@@ -487,6 +493,18 @@ export function FrameflowVideoProvider({
     }
   }, [getFastScrubTargetFrame, scheduleNextScrubStep, seekToFrame])
 
+  const handleVideoEnded = useCallback(() => {
+    const video = videoRef.current
+    const videoFps = videoFpsRef.current
+
+    if (!video || !loopPlaybackRef.current || videoFps === null) {
+      return
+    }
+
+    seekToFrame(video, videoFps, 0)
+    void video.play()
+  }, [seekToFrame])
+
   const startFramePaintLoop = useCallback(() => {
     const video = videoRef.current
     const canvas = canvasRef.current
@@ -584,11 +602,21 @@ export function FrameflowVideoProvider({
     }
 
     if (video.paused) {
+      const videoFps = videoFpsRef.current
+      if (
+        loopPlaybackRef.current &&
+        videoFps !== null &&
+        totalFramesRef.current > 0 &&
+        frameIndexRef.current >= totalFramesRef.current - 1
+      ) {
+        seekToFrame(video, videoFps, 0)
+      }
+
       void video.play()
     } else {
       video.pause()
     }
-  }, [ensureFallbackFps])
+  }, [ensureFallbackFps, seekToFrame])
 
   const clearMotionIdleTimeout = useCallback(() => {
     if (idleTimeoutRef.current !== null) {
@@ -940,6 +968,7 @@ export function FrameflowVideoProvider({
     video.addEventListener('durationchange', handleDurationChange)
     video.addEventListener('canplay', handleCanPlay)
     video.addEventListener('seeked', handleVideoSeeked)
+    video.addEventListener('ended', handleVideoEnded)
 
     if (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
       handleCanPlay()
@@ -952,9 +981,11 @@ export function FrameflowVideoProvider({
       video.removeEventListener('durationchange', handleDurationChange)
       video.removeEventListener('canplay', handleCanPlay)
       video.removeEventListener('seeked', handleVideoSeeked)
+      video.removeEventListener('ended', handleVideoEnded)
     }
   }, [
     src,
+    handleVideoEnded,
     handleVideoSeeked,
     startFpsProbe,
     startFramePaintLoop,

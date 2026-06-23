@@ -20,6 +20,27 @@
   stroke: var(--storyboard-selection);
 }
 
+/* Select mode: default arrow on empty canvas (xyflow uses pointer on .selection pane). */
+.storyboard-playground .react-flow__pane,
+.storyboard-playground .react-flow__pane.selection,
+.storyboard-playground .react-flow__pane.draggable {
+  cursor: default;
+}
+
+.storyboard-playground .react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
+/* Node wrappers stay default; drag handles set grab on headers/bodies. */
+.storyboard-playground .react-flow__node.selectable,
+.storyboard-playground .react-flow__node.draggable {
+  cursor: default;
+}
+
+.storyboard-playground .react-flow__node.draggable.dragging {
+  cursor: grabbing;
+}
+
 .storyboard-playground .react-flow__node-mediaCard {
   padding: 0;
   border: none;
@@ -161,6 +182,16 @@
 .media-card__header-btn--clip-ready:focus-visible:not(:disabled) {
   background: #9333ea;
   color: #fff;
+}
+
+.media-card__header-btn--loop-active {
+  color: #c084fc;
+}
+
+.media-card__header-btn--loop-active:hover:not(:disabled):not([aria-disabled='true']),
+.media-card__header-btn--loop-active:focus-visible:not(:disabled):not([aria-disabled='true']) {
+  background: rgba(168, 85, 247, 0.15);
+  color: #d8b4fe;
 }
 
 .frameflow-progress-hit--clip-mode {

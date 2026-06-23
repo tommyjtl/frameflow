@@ -77,6 +77,8 @@ import './storyboard.css'
 const SAVE_DEBOUNCE_MS = 500
 const CONTEXT_MENU_ESTIMATED_HEIGHT = 168
 const INGEST_MESSAGE_MS = 5000
+const PANE_DOUBLE_CLICK_MS = 400
+const PANE_DOUBLE_CLICK_PX = 10
 
 type LoadState = 'loading' | 'ready' | 'error'
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
@@ -201,6 +203,9 @@ function StoryboardPlaygroundCanvas({
   const { croppingNodeId, enterCropMode, cancelCrop, applyCrop } =
     useStoryboardImageCrop()
   const clipMode = useClipExtractModeOptional()
+  const lastPaneClickRef = useRef<{ time: number; x: number; y: number } | null>(
+    null,
+  )
 
   const createTextAtFlowPosition = useCallback(
     (position: { x: number; y: number }) => {
@@ -251,21 +256,44 @@ function StoryboardPlaygroundCanvas({
         return
       }
 
-      if (event.detail === 2) {
-        if (interactionMode === 'select') {
-          if (croppingNodeId) {
-            cancelCrop()
-            return
-          }
-
-          createTextAtFlowPosition(
-            screenToFlowPosition({
-              x: event.clientX,
-              y: event.clientY,
-            }),
-          )
+      const isPaneDoubleClick = (() => {
+        if (event.detail === 2) {
+          return true
         }
 
+        const lastClick = lastPaneClickRef.current
+        lastPaneClickRef.current = {
+          time: event.timeStamp,
+          x: event.clientX,
+          y: event.clientY,
+        }
+
+        if (!lastClick) {
+          return false
+        }
+
+        return (
+          event.timeStamp - lastClick.time < PANE_DOUBLE_CLICK_MS &&
+          Math.hypot(
+            event.clientX - lastClick.x,
+            event.clientY - lastClick.y,
+          ) < PANE_DOUBLE_CLICK_PX
+        )
+      })()
+
+      if (isPaneDoubleClick && interactionMode === 'select') {
+        if (croppingNodeId) {
+          cancelCrop()
+          return
+        }
+
+        createTextAtFlowPosition(
+          screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+          }),
+        )
+        lastPaneClickRef.current = null
         return
       }
 

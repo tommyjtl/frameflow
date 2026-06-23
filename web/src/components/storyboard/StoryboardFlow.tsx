@@ -191,6 +191,7 @@ export function StoryboardFlow({
       connectionRadius={28}
       colorMode="dark"
       fitView={false}
+      elevateNodesOnSelect={false}
       proOptions={{ hideAttribution: true }}
     >
       <Background gap={16} size={1} />

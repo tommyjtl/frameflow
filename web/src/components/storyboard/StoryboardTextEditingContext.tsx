@@ -133,7 +133,7 @@ export function StoryboardTextEditingProvider({
   }, [editingTextNodeId, setNodes, takeSnapshot])
 
   useEffect(() => {
-    if (interactionMode !== 'select' && editingTextNodeId) {
+    if (interactionMode === 'draw' && editingTextNodeId) {
       exitTextEditing()
     }
   }, [editingTextNodeId, exitTextEditing, interactionMode])
